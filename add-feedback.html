@@ -1,0 +1,1183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Add Feedback - AMS Mobile</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Add any custom styles here */
+        .rating-star {
+            transition: color 0.2s;
+        }
+        .rating-star:hover {
+            color: #fbbf24; /* yellow-400 */
+        }
+        
+        /* Camera styles */
+        .camera-container {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 50;
+        }
+        
+        /* Product selector styles */
+        .product-selector {
+            position: relative;
+        }
+        
+        .product-selector-button {
+            width: 100%;
+            text-align: left;
+            padding: 12px;
+            border: 1px solid #E5E7EB;
+            border-radius: 8px;
+            background: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .product-selector-button.selected {
+            border-color: #3B82F6;
+            background-color: #EFF6FF;
+        }
+        
+        .product-dropdown {
+            display: none;
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: white;
+            border-radius: 16px 16px 0 0;
+            box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.1);
+            z-index: 40;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .product-dropdown.active {
+            display: block;
+        }
+        
+        .product-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 30;
+        }
+        
+        .product-overlay.active {
+            display: block;
+        }
+        
+        .category-item {
+            padding: 16px;
+            border-bottom: 1px solid #E5E7EB;
+            cursor: pointer;
+        }
+        
+        .product-item {
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .product-item:hover {
+            background-color: #F3F4F6;
+        }
+        
+        .product-item img {
+            width: 48px;
+            height: 48px;
+            border-radius: 8px;
+            object-fit: cover;
+        }
+        
+        .breadcrumb {
+            padding: 16px;
+            border-bottom: 1px solid #E5E7EB;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .breadcrumb-separator {
+            color: #9CA3AF;
+        }
+        
+        .breadcrumb-item {
+            color: #6B7280;
+            cursor: pointer;
+        }
+        
+        .breadcrumb-item.active {
+            color: #111827;
+            font-weight: 500;
+        }
+        
+        /* Camera styles */
+        .camera-preview {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .camera-controls {
+            position: fixed;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            z-index: 51;
+        }
+        
+        .camera-button {
+            padding: 12px 24px;
+            border-radius: 9999px;
+            background: white;
+            color: black;
+            font-weight: 500;
+        }
+        
+        .photo-preview {
+            display: none;
+            width: 100%;
+            max-height: 200px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-top: 12px;
+        }
+        
+        /* Dictation styles */
+        .dictation-container {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 50;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+        
+        .dictation-pulse {
+            width: 100px;
+            height: 100px;
+            background: #3B82F6;
+            border-radius: 50%;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .dictation-pulse svg {
+            width: 48px;
+            height: 48px;
+            color: white;
+        }
+        
+        .dictation-pulse.listening {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+            }
+            
+            70% {
+                transform: scale(1);
+                box-shadow: 0 0 0 20px rgba(59, 130, 246, 0);
+            }
+            
+            100% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+            }
+        }
+        
+        .dictation-text {
+            color: white;
+            font-size: 1.25rem;
+            margin-bottom: 24px;
+            text-align: center;
+            max-width: 80%;
+        }
+        
+        .dictation-controls {
+            display: flex;
+            gap: 16px;
+        }
+        
+        .dictation-button {
+            padding: 12px 24px;
+            border-radius: 9999px;
+            background: white;
+            color: black;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .dictation-button svg {
+            width: 20px;
+            height: 20px;
+        }
+        
+        .dictation-button.stop {
+            background: #EF4444;
+            color: white;
+        }
+
+        /* Add animation for pulse effect */
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+            }
+            70% {
+                transform: scale(1.05);
+                box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+            }
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+            }
+        }
+    </style>
+</head>
+<body class="bg-[#DFEBF0] min-h-screen">
+    <div class="max-w-md mx-auto bg-white min-h-screen">
+        <!-- Header -->
+        <div class="bg-white px-4 py-3 border-b border-gray-200">
+            <div class="flex items-center justify-between">
+                <h1 class="text-xl font-semibold text-gray-900">Add Product Feedback</h1>
+                <a href="index.html" class="text-gray-500 hover:text-gray-700">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </a>
+            </div>
+        </div>
+
+        <!-- Feedback Form -->
+        <div class="p-4 space-y-6">
+            <form id="feedback-form" class="space-y-4">
+                <!-- Input Method Buttons -->
+                <div class="flex justify-between space-x-4">
+                    <button type="button" id="dictate-feedback" class="flex-1 flex flex-col items-center p-4 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                        </svg>
+                        <span class="text-sm mt-2">Dictate</span>
+                    </button>
+                    
+                    <button type="button" id="camera-feedback" class="flex-1 flex flex-col items-center p-4 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        <span class="text-sm mt-2">Photo</span>
+                    </button>
+                </div>
+
+                <!-- Photo preview with remove button -->
+                <div class="relative">
+                    <img id="photo-preview" class="photo-preview" alt="Captured photo">
+                    <button id="remove-photo" class="absolute top-2 right-2 bg-red-500 text-white rounded-full p-2 hover:bg-red-600 hidden">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Text Input Section -->
+                <div class="space-y-4">
+                    <textarea id="feedback-message" name="feedback-message" rows="3" placeholder="Type your feedback here..."
+                        class="mt-1 block w-full rounded-md border-2 border-gray-300 shadow-sm focus:border-cyan-500 focus:ring-cyan-500 p-3"></textarea>
+                </div>
+
+                <!-- AI Detection Notice Placeholder -->
+                <div id="ai-detection-notice" class="mt-2"></div>
+
+                <!-- Product Selector -->
+                <div class="product-selector">
+                    <button type="button" id="product-selector-button" class="product-selector-button w-full">
+                        <span id="selected-product-text">Select Product</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Rating Section -->
+                <div class="space-y-2">
+                    <label class="block text-sm font-medium text-gray-700">Rating</label>
+                    <div id="rating-stars" class="flex justify-between w-full">
+                        <button type="button" data-rating="1" class="rating-star text-gray-300 hover:text-yellow-400">
+                            <svg class="w-10 h-10" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                            </svg>
+                        </button>
+                        <button type="button" data-rating="2" class="rating-star text-gray-300 hover:text-yellow-400">
+                            <svg class="w-10 h-10" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                            </svg>
+                        </button>
+                        <button type="button" data-rating="3" class="rating-star text-gray-300 hover:text-yellow-400">
+                            <svg class="w-10 h-10" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                            </svg>
+                        </button>
+                        <button type="button" data-rating="4" class="rating-star text-gray-300 hover:text-yellow-400">
+                            <svg class="w-10 h-10" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                            </svg>
+                        </button>
+                        <button type="button" data-rating="5" class="rating-star text-gray-300 hover:text-yellow-400">
+                            <svg class="w-10 h-10" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Feedback Labels -->
+                <div class="space-y-2">
+                    <label class="block text-sm font-medium text-gray-700">Feedback Type</label>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" class="feedback-label px-3 py-1 rounded-full text-sm border border-gray-300 hover:bg-yellow-100 hover:border-yellow-500 hover:text-yellow-700" data-label="Suggestion" data-color="yellow">
+                            Suggestion
+                        </button>
+                        <button type="button" class="feedback-label px-3 py-1 rounded-full text-sm border border-gray-300 hover:bg-orange-100 hover:border-orange-500 hover:text-orange-700" data-label="Complaint" data-color="orange">
+                            Complaint
+                        </button>
+                        <button type="button" class="feedback-label px-3 py-1 rounded-full text-sm border border-gray-300 hover:bg-green-100 hover:border-green-500 hover:text-green-700" data-label="Praise" data-color="green">
+                            Praise
+                        </button>
+                        <button type="button" class="feedback-label px-3 py-1 rounded-full text-sm border border-gray-300 hover:bg-blue-100 hover:border-blue-500 hover:text-blue-700" data-label="Question" data-color="blue">
+                            Question
+                        </button>
+                        <button type="button" class="feedback-label px-3 py-1 rounded-full text-sm border border-gray-300 hover:bg-purple-100 hover:border-purple-500 hover:text-purple-700" data-label="Safety" data-color="purple">
+                            Critical to Patient Safety
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Submit Button -->
+                <button id="submit-feedback" class="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
+                    Submit Feedback
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Product Dropdown -->
+    <div id="product-overlay" class="product-overlay"></div>
+    <div id="product-dropdown" class="product-dropdown">
+        <div id="product-breadcrumb" class="breadcrumb">
+            <span class="breadcrumb-item active">Categories</span>
+        </div>
+        
+        <!-- Suggestions Section -->
+        <div id="suggestions-section" class="border-b border-gray-200">
+            <div class="px-4 py-3 bg-gray-50">
+                <h3 class="text-sm font-medium text-gray-900">Suggested Products</h3>
+                <p class="text-xs text-gray-500 mt-1">Based on your feedback</p>
+            </div>
+            <div id="suggestions-list" class="divide-y divide-gray-200">
+                <!-- Suggestions will be populated here -->
+            </div>
+        </div>
+        
+        <div id="product-list"></div>
+    </div>
+
+    <!-- Camera Container -->
+    <div id="camera-container" class="camera-container">
+        <video id="camera-preview" class="camera-preview" autoplay playsinline></video>
+        <div class="camera-controls">
+            <button id="capture-photo" class="camera-button">Capture</button>
+            <button id="cancel-photo" class="camera-button">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Dictation Container -->
+    <div id="dictation-container" class="dictation-container">
+        <div id="dictation-pulse" class="dictation-pulse">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+            </svg>
+        </div>
+        <div id="dictation-text" class="dictation-text"></div>
+        <div class="dictation-controls">
+            <button id="start-dictation" class="dictation-button">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
+                </svg>
+                Start
+            </button>
+            <button id="stop-dictation" class="dictation-button stop">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clip-rule="evenodd" />
+                </svg>
+                Stop
+            </button>
+            <button id="cancel-dictation" class="dictation-button">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                </svg>
+                Cancel
+            </button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get the feedback text from URL parameters
+            const urlParams = new URLSearchParams(window.location.search);
+            const feedbackText = urlParams.get('feedback');
+            const photoData = urlParams.get('photo');
+            const photoSource = urlParams.get('photoSource');
+            
+            // If there's feedback text in the URL, populate the textarea
+            if (feedbackText) {
+                const feedbackTextarea = document.getElementById('feedback-message');
+                if (feedbackTextarea) {
+                    feedbackTextarea.value = feedbackText;
+                    // Trigger AI analysis if it exists
+                    if (typeof triggerAIAnalysis === 'function') {
+                        triggerAIAnalysis();
+                    }
+                }
+            }
+            
+            let photoDataToUse = photoData;
+            
+            // If photo is in localStorage, retrieve it
+            if (photoSource === 'localStorage') {
+                photoDataToUse = localStorage.getItem('tempCapturedPhoto');
+                // Clear from localStorage after retrieving to free up space
+                localStorage.removeItem('tempCapturedPhoto');
+            }
+            
+            // If there's photo data, show it in the preview
+            if (photoDataToUse) {
+                const photoPreview = document.getElementById('photo-preview');
+                const removePhotoBtn = document.getElementById('remove-photo');
+                
+                if (photoPreview) {
+                    photoPreview.src = photoDataToUse;
+                    photoPreview.style.display = 'block';
+                    
+                    // Show the remove button
+                    if (removePhotoBtn) {
+                        removePhotoBtn.classList.remove('hidden');
+                    }
+                    
+                    // Store the photo in the feedback state
+                    feedbackState.photo = photoDataToUse;
+                    
+                    // Simulate AI product detection
+                    detectProductInPhoto(photoDataToUse);
+                }
+            }
+            
+            // Product categories and items data
+            const productData = {
+                categories: [
+                    {
+                        id: 'protective',
+                        name: 'Protective Equipment',
+                        items: [
+                            { id: 'gloves-m', name: 'Gloves - Size M', image: 'https://www.gloves.com/cdn/shop/articles/maskmedicare-shop-zCsup0tF-q4-unsplash.jpg?v=1673613431' },
+                            { id: 'gloves-l', name: 'Gloves - Size L', image: 'https://www.gloves.com/cdn/shop/articles/maskmedicare-shop-zCsup0tF-q4-unsplash.jpg?v=1673613431' },
+                            { id: 'masks', name: 'Masks - Type IIR', image: 'https://hdbrows.com/shop/pro/media/catalog/product/cache/83883c3d58d0958e9d4c7e2cf62df9ac/t/y/type-iir-mask.jpg' }
+                        ]
+                    },
+                    {
+                        id: 'surgical',
+                        name: 'Surgical Instruments',
+                        items: [
+                            { id: 'scissors', name: 'Surgical Scissors', image: 'https://cdn.webshopapp.com/shops/308248/files/472938159/325x325x2/medipharchem-surgical-scissors-st-st-curved.jpg' },
+                            { id: 'forceps', name: 'Forceps', image: 'https://cdn.webshopapp.com/shops/308248/files/472938159/325x325x2/medipharchem-surgical-scissors-st-st-curved.jpg' }
+                        ]
+                    },
+                    {
+                        id: 'monitoring',
+                        name: 'Monitoring Equipment',
+                        items: [
+                            { id: 'bp-monitor', name: 'Blood Pressure Monitor', image: 'https://cdn.webshopapp.com/shops/308248/files/472938159/325x325x2/medipharchem-surgical-scissors-st-st-curved.jpg' },
+                            { id: 'thermometer', name: 'Digital Thermometer', image: 'https://cdn.webshopapp.com/shops/308248/files/472938159/325x325x2/medipharchem-surgical-scissors-st-st-curved.jpg' }
+                        ]
+                    }
+                ]
+            };
+
+            // State
+            let feedbackState = {
+                message: '',
+                photo: null,
+                rating: 0,
+                label: null,
+                selectedProduct: null
+            };
+
+            let currentCategory = null;
+
+            // Product selector elements
+            const productButton = document.getElementById('product-selector-button');
+            const productDropdown = document.getElementById('product-dropdown');
+            const productOverlay = document.getElementById('product-overlay');
+            const productList = document.getElementById('product-list');
+            const breadcrumb = document.getElementById('product-breadcrumb');
+
+            // Show product selector
+            productButton.addEventListener('click', () => {
+                productDropdown.classList.add('active');
+                productOverlay.classList.add('active');
+                if (!currentCategory) {
+                    showCategories();
+                }
+            });
+
+            // Hide product selector
+            productOverlay.addEventListener('click', () => {
+                productDropdown.classList.remove('active');
+                productOverlay.classList.remove('active');
+                currentCategory = null;
+                updateBreadcrumb();
+            });
+
+            // Function to show categories
+            function showCategories() {
+                productList.innerHTML = productData.categories.map(category => `
+                    <div class="category-item" data-category-id="${category.id}">
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-900">${category.name}</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                            </svg>
+                        </div>
+                    </div>
+                `).join('');
+
+                // Show suggestions if there's feedback text
+                const feedbackText = document.getElementById('feedback-message').value;
+                if (feedbackText) {
+                    showSuggestions(feedbackText);
+                } else {
+                    document.getElementById('suggestions-section').style.display = 'none';
+                }
+
+                // Add click handlers for categories
+                document.querySelectorAll('.category-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        const categoryId = item.dataset.categoryId;
+                        currentCategory = productData.categories.find(c => c.id === categoryId);
+                        showProducts(currentCategory);
+                        updateBreadcrumb();
+                    });
+                });
+            }
+
+            // Function to show suggestions
+            function showSuggestions(feedbackText) {
+                const suggestionsSection = document.getElementById('suggestions-section');
+                const suggestionsList = document.getElementById('suggestions-list');
+                
+                // Show the section
+                suggestionsSection.style.display = 'block';
+                
+                // Get all products
+                const allProducts = productData.categories.flatMap(c => c.items);
+                
+                // Simulate AI suggestions based on feedback text
+                // In a real app, this would use actual AI/ML to suggest products
+                const suggestedProducts = allProducts.slice(0, 3); // Just take first 3 as example
+                
+                suggestionsList.innerHTML = suggestedProducts.map(product => `
+                    <div class="product-item" data-product-id="${product.id}">
+                        <img src="${product.image}" alt="${product.name}">
+                        <span class="text-gray-900">${product.name}</span>
+                    </div>
+                `).join('');
+                
+                // Add click handlers for suggested products
+                document.querySelectorAll('#suggestions-list .product-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        const productId = item.dataset.productId;
+                        const selectedProduct = allProducts.find(p => p.id === productId);
+                        selectProduct(selectedProduct);
+                    });
+                });
+            }
+
+            // Update feedback message listener to refresh suggestions
+            const feedbackMessage = document.getElementById('feedback-message');
+            if (feedbackMessage) {
+                feedbackMessage.addEventListener('input', () => {
+                    if (productDropdown.classList.contains('active')) {
+                        showSuggestions(feedbackMessage.value);
+                    }
+                });
+            }
+
+            function showProducts(category) {
+                productList.innerHTML = category.items.map(item => `
+                    <div class="product-item" data-product-id="${item.id}">
+                        <img src="${item.image}" alt="${item.name}">
+                        <span class="text-gray-900">${item.name}</span>
+                    </div>
+                `).join('');
+
+                // Add click handlers for products
+                document.querySelectorAll('.product-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        const productId = item.dataset.productId;
+                        const selectedProduct = category.items.find(p => p.id === productId);
+                        selectProduct(selectedProduct);
+                    });
+                });
+            }
+
+            function updateBreadcrumb() {
+                if (currentCategory) {
+                    breadcrumb.innerHTML = `
+                        <span class="breadcrumb-item" id="category-back">Categories</span>
+                        <span class="breadcrumb-separator">/</span>
+                        <span class="breadcrumb-item active">${currentCategory.name}</span>
+                    `;
+                    document.getElementById('category-back').addEventListener('click', () => {
+                        currentCategory = null;
+                        showCategories();
+                        updateBreadcrumb();
+                    });
+                } else {
+                    breadcrumb.innerHTML = '<span class="breadcrumb-item active">Categories</span>';
+                }
+            }
+
+            function selectProduct(product) {
+                feedbackState.selectedProduct = product;
+                document.getElementById('selected-product-text').textContent = product.name;
+                productButton.classList.add('selected');
+                productDropdown.classList.remove('active');
+                productOverlay.classList.remove('active');
+                currentCategory = null;
+                updateBreadcrumb();
+            }
+
+            // Initialize categories view
+            showCategories();
+
+            let stream = null;
+
+            // Camera elements
+            const cameraContainer = document.getElementById('camera-container');
+            const cameraPreview = document.getElementById('camera-preview');
+            const photoPreview = document.getElementById('photo-preview');
+            const captureButton = document.getElementById('capture-photo');
+            const cancelButton = document.getElementById('cancel-photo');
+
+            // Camera button
+            const cameraButton = document.getElementById('camera-feedback');
+            if (cameraButton) {
+                cameraButton.addEventListener('click', async () => {
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia({ 
+                            video: { 
+                                facingMode: 'environment',
+                                width: { ideal: 1920 },
+                                height: { ideal: 1080 }
+                            } 
+                        });
+                        cameraPreview.srcObject = stream;
+                        cameraContainer.style.display = 'block';
+                    } catch (error) {
+                        console.error('Error accessing camera:', error);
+                        alert('Failed to access camera. Please ensure camera permissions are granted.');
+                    }
+                });
+            }
+
+            // Capture photo
+            if (captureButton) {
+                captureButton.addEventListener('click', () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = cameraPreview.videoWidth;
+                    canvas.height = cameraPreview.videoHeight;
+                    canvas.getContext('2d').drawImage(cameraPreview, 0, 0);
+                    
+                    // Store photo in state and show preview
+                    feedbackState.photo = canvas.toDataURL('image/jpeg');
+                    photoPreview.src = feedbackState.photo;
+                    photoPreview.style.display = 'block';
+                    
+                    // Clean up camera
+                    stopCamera();
+
+                    // Simulate AI product detection
+                    detectProductInPhoto(feedbackState.photo);
+                });
+            }
+
+            // Cancel photo
+            if (cancelButton) {
+                cancelButton.addEventListener('click', stopCamera);
+            }
+
+            function stopCamera() {
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                    stream = null;
+                }
+                cameraContainer.style.display = 'none';
+            }
+
+            // Dictation elements
+            const dictationContainer = document.getElementById('dictation-container');
+            const dictationPulse = document.getElementById('dictation-pulse');
+            const dictationText = document.getElementById('dictation-text');
+            const startDictationBtn = document.getElementById('start-dictation');
+            const stopDictationBtn = document.getElementById('stop-dictation');
+            const cancelDictationBtn = document.getElementById('cancel-dictation');
+            
+            let recognition = null;
+            let isListening = false;
+            
+            // Initialize speech recognition
+            function initializeSpeechRecognition() {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SpeechRecognition) {
+                    alert('Speech recognition is not supported in your browser.');
+                    return null;
+                }
+                
+                const recognition = new SpeechRecognition();
+                recognition.continuous = true;
+                recognition.interimResults = true;
+                recognition.lang = 'en-US';
+                
+                // Set up recognition handlers
+                setupRecognitionHandlers(recognition);
+                
+                return recognition;
+            }
+            
+            // Dictation button
+            const dictateButton = document.getElementById('dictate-feedback');
+            if (dictateButton) {
+                dictateButton.addEventListener('click', () => {
+                    dictationContainer.style.display = 'flex';
+                    dictationText.textContent = 'Tap Start to begin speaking...';
+                    startDictationBtn.style.display = 'flex';
+                    stopDictationBtn.style.display = 'none';
+                    dictationPulse.classList.remove('listening');
+                    
+                    // Initialize recognition if not already done
+                    if (!recognition) {
+                        recognition = initializeSpeechRecognition();
+                    }
+                });
+            }
+            
+            // Start dictation
+            if (startDictationBtn) {
+                startDictationBtn.addEventListener('click', () => {
+                    if (!recognition) {
+                        recognition = initializeSpeechRecognition();
+                        if (!recognition) return;
+                    }
+                    
+                    recognition.start();
+                    isListening = true;
+                    dictationPulse.classList.add('listening');
+                    startDictationBtn.style.display = 'none';
+                    stopDictationBtn.style.display = 'flex';
+                    dictationText.textContent = 'Listening...';
+                });
+            }
+            
+            // Stop dictation
+            if (stopDictationBtn) {
+                stopDictationBtn.addEventListener('click', () => {
+                    if (recognition && isListening) {
+                        recognition.stop();
+                        isListening = false;
+                        dictationPulse.classList.remove('listening');
+                        
+                        // Show analyzing card
+                        const aiDetectionNotice = document.getElementById('ai-detection-notice');
+                        aiDetectionNotice.classList.remove('hidden');
+                        aiDetectionNotice.innerHTML = `
+                            <div class="bg-blue-50 rounded-md p-3 mt-2">
+                                <div class="flex items-center">
+                                    <div class="flex-shrink-0">
+                                        <svg class="animate-spin h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                    </div>
+                                    <div class="ml-3">
+                                        <p class="text-sm text-blue-700">Analyzing feedback...</p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+
+                        // Simulate analysis delay
+                        setTimeout(() => {
+                            dictationContainer.style.display = 'none';
+                            triggerAIAnalysis();
+                        }, 2000);
+                    }
+                });
+            }
+            
+            // Cancel dictation
+            if (cancelDictationBtn) {
+                cancelDictationBtn.addEventListener('click', () => {
+                    if (recognition && isListening) {
+                        recognition.abort();
+                        isListening = false;
+                    }
+                    
+                    // Show analyzing card
+                    const aiDetectionNotice = document.getElementById('ai-detection-notice');
+                    aiDetectionNotice.classList.remove('hidden');
+                    aiDetectionNotice.innerHTML = `
+                        <div class="bg-blue-50 rounded-md p-3 mt-2">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <svg class="animate-spin h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                </div>
+                                <div class="ml-3">
+                                    <p class="text-sm text-blue-700">Analyzing feedback...</p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    // Simulate analysis delay
+                    setTimeout(() => {
+                        dictationContainer.style.display = 'none';
+                        triggerAIAnalysis();
+                    }, 2000);
+                });
+            }
+            
+            // Function to trigger AI analysis
+            function triggerAIAnalysis() {
+                const dictatedText = document.getElementById('feedback-message').value;
+                if (dictatedText) {
+                    // Show AI analysis notice
+                    const aiDetectionNotice = document.getElementById('ai-detection-notice');
+                    aiDetectionNotice.innerHTML = `
+                        <div class="bg-blue-50 rounded-md p-3 mt-2">
+                            <div class="flex">
+                                <div class="flex-shrink-0">
+                                    <svg class="h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+                                    </svg>
+                                </div>
+                                <div class="ml-3 flex-1">
+                                    <p class="text-sm text-blue-700">
+                                        AI Analysis Complete: Based on your feedback, we've pre-selected relevant product and rating.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    // Auto-select a product (using the first product from the first category as an example)
+                    const firstProduct = productData.categories[0].items[0];
+                    selectProduct(firstProduct);
+
+                    // Set rating to 3 stars
+                    const ratingStars = document.querySelectorAll('.rating-star');
+                    ratingStars.forEach((star, index) => {
+                        if (index < 3) {
+                            star.classList.remove('text-gray-300');
+                            star.classList.add('text-yellow-400');
+                        } else {
+                            star.classList.remove('text-yellow-400');
+                            star.classList.add('text-gray-300');
+                        }
+                    });
+                    currentRating = 3;
+
+                    // Add some animation to the selected product
+                    const productButton = document.getElementById('product-selector-button');
+                    productButton.style.animation = 'pulse 2s';
+                    setTimeout(() => productButton.style.animation = '', 2000);
+                }
+            }
+            
+            // Handle speech recognition events
+            function setupRecognitionHandlers(recognition) {
+                recognition.onresult = (event) => {
+                    let finalTranscript = '';
+                    let interimTranscript = '';
+                    
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        const transcript = event.results[i][0].transcript;
+                        if (event.results[i].isFinal) {
+                            finalTranscript += transcript;
+                        } else {
+                            interimTranscript += transcript;
+                        }
+                    }
+                    
+                    if (finalTranscript) {
+                        const feedbackTextarea = document.getElementById('feedback-message');
+                        const currentText = feedbackTextarea.value;
+                        feedbackTextarea.value = currentText + (currentText ? ' ' : '') + finalTranscript;
+                    }
+                    
+                    dictationText.textContent = interimTranscript || 'Listening...';
+                };
+                
+                recognition.onerror = (event) => {
+                    if (event.error === 'no-speech') {
+                        dictationText.textContent = 'No speech detected. Try again.';
+                    } else {
+                        console.error('Speech recognition error:', event.error);
+                        dictationText.textContent = 'Error occurred. Please try again.';
+                    }
+                    dictationPulse.classList.remove('listening');
+                    startDictationBtn.style.display = 'flex';
+                    stopDictationBtn.style.display = 'none';
+                };
+                
+                recognition.onend = () => {
+                    isListening = false;
+                    dictationPulse.classList.remove('listening');
+                    if (dictationContainer.style.display === 'flex') {
+                        startDictationBtn.style.display = 'flex';
+                        stopDictationBtn.style.display = 'none';
+                        dictationText.textContent = 'Tap Start to begin speaking...';
+                    }
+                };
+            }
+
+            // Add feedback label selection
+            const feedbackLabels = document.querySelectorAll('.feedback-label');
+            feedbackLabels.forEach(label => {
+                label.addEventListener('click', () => {
+                    const labelText = label.dataset.label;
+                    const labelColor = label.dataset.color;
+                    
+                    // Remove all active states
+                    feedbackLabels.forEach(l => {
+                        l.classList.remove(
+                            'bg-red-100', 'border-red-500', 'text-red-700',
+                            'bg-yellow-100', 'border-yellow-500', 'text-yellow-700',
+                            'bg-orange-100', 'border-orange-500', 'text-orange-700',
+                            'bg-green-100', 'border-green-500', 'text-green-700',
+                            'bg-blue-100', 'border-blue-500', 'text-blue-700',
+                            'bg-purple-100', 'border-purple-500', 'text-purple-700'
+                        );
+                    });
+                    
+                    // Add active state to clicked label
+                    label.classList.add(
+                        `bg-${labelColor}-100`,
+                        `border-${labelColor}-500`,
+                        `text-${labelColor}-700`
+                    );
+                    
+                    // Update state
+                    feedbackState.label = labelText;
+                });
+            });
+
+            // Submit button
+            const submitButton = document.getElementById('submit-feedback');
+            if (submitButton) {
+                submitButton.addEventListener('click', () => {
+                    const message = document.getElementById('feedback-message').value;
+
+                    if (!message) {
+                        alert('Please enter your feedback message');
+                        return;
+                    }
+
+                    if (!feedbackState.selectedProduct) {
+                        alert('Please select a product');
+                        return;
+                    }
+
+                    if (!feedbackState.label) {
+                        alert('Please select a feedback type');
+                        return;
+                    }
+
+                    const feedback = {
+                        ...feedbackState,
+                        message,
+                        timestamp: new Date().toISOString()
+                    };
+
+                    // Save to localStorage
+                    let feedbacks = JSON.parse(localStorage.getItem('productFeedbacks') || '[]');
+                    feedbacks.push(feedback);
+                    localStorage.setItem('productFeedbacks', JSON.stringify(feedbacks));
+
+                    alert('Feedback submitted successfully!');
+                    window.location.href = 'index.html';
+                });
+            }
+
+            // AI product detection
+            function detectProductInPhoto(photoData) {
+                // Show loading state
+                const aiDetectionNotice = document.getElementById('ai-detection-notice');
+                aiDetectionNotice.classList.remove('hidden');
+                aiDetectionNotice.innerHTML = `
+                    <div class="bg-blue-50 rounded-md p-3 mt-2">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0">
+                                <svg class="animate-spin h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            </div>
+                            <div class="ml-3">
+                                <p class="text-sm text-blue-700">Analyzing photo for product detection...</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // Simulate API delay
+                setTimeout(() => {
+                    // Get all products
+                    const allProducts = productData.categories.flatMap(c => c.items);
+                    
+                    // Simulate AI detection with 80% confidence
+                    const detectedProduct = allProducts[Math.floor(Math.random() * allProducts.length)];
+                    
+                    // Update UI with detection result
+                    aiDetectionNotice.innerHTML = `
+                        <div class="bg-blue-50 rounded-md p-3 mt-2">
+                            <div class="flex">
+                                <div class="flex-shrink-0">
+                                    <svg class="h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+                                    </svg>
+                                </div>
+                                <div class="ml-3 flex-1">
+                                    <p class="text-sm text-blue-700">
+                                        Product detected in photo: <span id="detected-product" class="font-medium">${detectedProduct.name}</span>
+                                    </p>
+                                    <p class="text-xs text-blue-600 mt-1">Confidence: 80%</p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    
+                    // Auto-select the detected product
+                    selectProduct(detectedProduct);
+                    
+                    // Highlight the selection
+                    productButton.classList.add('selected');
+                    productButton.style.animation = 'pulse 2s';
+                    setTimeout(() => productButton.style.animation = '', 2000);
+                }, 2000); // Simulate API delay
+            }
+
+            // Update rating behavior
+            const ratingStars = document.querySelectorAll('.rating-star');
+            let currentRating = 0;
+
+            ratingStars.forEach(star => {
+                star.addEventListener('click', () => {
+                    const rating = parseInt(star.dataset.rating);
+                    currentRating = rating;
+                    
+                    // Update all stars up to the clicked one
+                    ratingStars.forEach((s, index) => {
+                        if (index < rating) {
+                            s.classList.remove('text-gray-300');
+                            s.classList.add('text-yellow-400');
+                        } else {
+                            s.classList.remove('text-yellow-400');
+                            s.classList.add('text-gray-300');
+                        }
+                    });
+
+                    // If 5 stars are selected, select all
+                    if (rating === 5) {
+                        ratingStars.forEach(s => {
+                            s.classList.remove('text-gray-300');
+                            s.classList.add('text-yellow-400');
+                        });
+                    }
+                });
+
+                star.addEventListener('mouseover', () => {
+                    const rating = parseInt(star.dataset.rating);
+                    ratingStars.forEach((s, index) => {
+                        if (index < rating) {
+                            s.classList.add('text-yellow-400');
+                        }
+                    });
+                });
+
+                star.addEventListener('mouseout', () => {
+                    ratingStars.forEach((s, index) => {
+                        if (index >= currentRating) {
+                            s.classList.remove('text-yellow-400');
+                            s.classList.add('text-gray-300');
+                        }
+                    });
+                });
+            });
+
+            // Add photo remove functionality
+            const removePhotoBtn = document.getElementById('remove-photo');
+            
+            if (removePhotoBtn && photoPreview) {
+                removePhotoBtn.addEventListener('click', () => {
+                    photoPreview.style.display = 'none';
+                    removePhotoBtn.classList.add('hidden');
+                    feedbackState.photo = null;
+                });
+
+                // Show remove button when photo is displayed
+                photoPreview.addEventListener('load', () => {
+                    if (photoPreview.style.display !== 'none') {
+                        removePhotoBtn.classList.remove('hidden');
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html> 
