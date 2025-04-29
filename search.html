@@ -13,7 +13,24 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
-            // Optional: Include the same config as index.html if needed
+            theme: {
+                extend: {
+                    colors: {
+                        'light-blue-bg': '#E2EAEE',
+                        'header-icon': '#9CA3AF',
+                        'section-title': '#374151',
+                        'section-subtitle': '#6B7280',
+                        'nav-active-icon': '#004E70',
+                        'nav-passive-icon': '#7EAABD',
+                        'nav-text': '#00374F',
+                        'nav-gradient-base': '#D9E7EE',
+                    },
+                    boxShadow: {
+                        'bottom-card': '0 -2px 10px -5px rgba(0, 0, 0, 0.1)',
+                        'nav-gradient': '0 -10px 20px -5px rgba(226, 234, 238, 0.7)',
+                    }
+                }
+            }
         }
     </script>
     <style>
@@ -44,37 +61,45 @@
              opacity: 0;
              transform: translateY(10px);
         }
+        
+        /* Ensure body takes full height and no scroll bars */
+        html, body {
+             height: 100%;
+             overflow: hidden; /* Prevent main scroll */
+             margin: 0;
+             padding: 0;
+        }
     </style>
 </head>
-<body class="h-screen flex justify-center items-center bg-gray-200">
+<body class="h-screen flex justify-center items-center bg-light-blue-bg">
     <!-- Recreate the chat screen structure here -->
-    <div id="chat-screen" class="w-full max-w-md h-full bg-gray-100 flex flex-col z-40 shadow-lg">
+    <div id="chat-screen" class="w-full max-w-md h-full bg-light-blue-bg flex flex-col z-40 shadow-lg">
         <!-- Chat Header - Made sticky -->
         <header class="bg-white shadow-sm p-3 flex items-center shrink-0 sticky top-0 z-10">
              <!-- Make back button link to index.html -->
-             <a href="index.html" class="text-gray-600 p-2">
+             <a href="index.html" class="text-nav-active-icon p-2">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-                  </svg>
+                </svg>
             </a>
-            <!-- Adjust title if needed -->
-            <h1 class="flex-grow text-center text-lg font-semibold text-gray-800">Request Product Chat</h1> 
+            <!-- Adjust title to match app style -->
+            <h1 class="flex-grow text-center text-lg font-semibold text-section-title">Request Product Chat</h1> 
             <!-- Optionally keep user info -->
             <div class="flex items-center space-x-2 opacity-0 pointer-events-none"> <!-- Hide user info for now or adjust -->
                  <span class="text-sm font-medium text-gray-700">Dr. Sam Smith</span>
                  <img src="https://via.placeholder.com/32" alt="User Avatar" class="w-8 h-8 rounded-full bg-gray-300">
-             </div>
+            </div>
         </header>
 
         <!-- Chat Content Area -->
         <div id="chat-content" class="flex-grow overflow-y-auto p-4 space-y-4 pb-20">
             <!-- Initial AI Message -->
-            <div class="flex items-center space-x-2 text-sm text-gray-600 my-4">
-                <span class="w-5 h-5 border-2 border-gray-400 rounded-full block shrink-0"></span>
+            <div class="flex items-center space-x-2 text-sm text-section-subtitle my-4">
+                <span class="w-5 h-5 border-2 border-nav-passive-icon rounded-full block shrink-0"></span>
                 <span>AMS chat</span>
             </div>
             <div class="flex justify-start">
-                <div class="bg-white text-gray-800 rounded-lg p-3 max-w-xs shadow">
+                <div class="bg-white text-section-title rounded-lg p-3 max-w-xs shadow">
                     <p>Hi Sam, Which product would you like to request?<br>You can write the product name, id number, scan a barcode, send me a product link, or use your voice to submit your request.</p>
                 </div>
             </div>
@@ -82,18 +107,18 @@
         </div>
 
         <!-- Chat Input Bar -->
-        <footer class="fixed bottom-0 left-0 right-0 bg-white p-2 border-t border-gray-200 z-10">
+        <footer class="fixed bottom-0 left-0 right-0 bg-white p-2 border-t border-gray-200 z-10 shadow-bottom-card">
             <div class="max-w-md mx-auto flex items-center space-x-2">
-                <input id="chat-input" type="text" placeholder="Ask me" class="flex-grow border border-gray-300 rounded-full px-4 py-2 text-base focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                <input id="chat-input" type="text" placeholder="Ask me" class="flex-grow border border-gray-300 rounded-full px-4 py-2 text-base focus:outline-none focus:ring-1 focus:ring-nav-active-icon focus:border-nav-active-icon">
                 <button id="chat-send-button" class="w-10 h-10 bg-gray-200 text-gray-600 rounded-full flex items-center justify-center shrink-0 hidden">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
-                      </svg>
+                    </svg>
                 </button>
-                <button id="chat-dictate-button" class="w-10 h-10 bg-gray-900 text-white rounded-full flex items-center justify-center shrink-0">
+                <button id="chat-dictate-button" class="w-10 h-10 bg-nav-active-icon text-white rounded-full flex items-center justify-center shrink-0">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
-                      </svg>
+                    </svg>
                 </button>
             </div>
         </footer>
