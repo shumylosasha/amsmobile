@@ -1,4 +1,88 @@
-document.addEventListener('DOMContentLoaded', () => {
+import { initNotifications } from './notifications.js';
+import { processOfflineQueue, testFeedbackConnection, getFeedback } from './db-utils.js';
+
+// Add this function after the existing functions but before the DOMContentLoaded event
+async function displaySupabaseFeedback() {
+    try {
+        const feedbackContainer = document.querySelector('#feedback-content .space-y-4');
+        if (!feedbackContainer) {
+            console.error('Feedback container not found');
+            return;
+        }
+
+        const result = await getFeedback();
+        if (!result) {
+            console.error('No feedback data received');
+            return;
+        }
+
+        // Create HTML for each feedback item
+        const feedbackHTML = result.map(feedback => `
+            <div class="card p-4">
+                <!-- Product Info Row -->
+                <div class="flex items-center space-x-4">
+                    <div class="w-20 h-20 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
+                        <img src="${feedback.method === 'photo' ? feedback.photo_url || 'https://via.placeholder.com/150' : 'https://via.placeholder.com/150'}" 
+                             alt="${feedback.product || 'Product'}" 
+                             class="w-full h-full object-cover">
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h3 class="text-lg font-medium text-gray-900">${feedback.product}</h3>
+                                <p class="text-gray-500">${new Date(feedback.timestamp).toLocaleDateString()}</p>
+                            </div>
+                            ${feedback.is_critical ? `
+                                <span class="text-xs font-medium px-2 py-1 rounded-full bg-red-100 text-red-700">
+                                    Critical
+                                </span>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="h-px bg-gray-200 my-4"></div>
+
+                <!-- Feedback Row -->
+                <div>
+                    <div class="flex items-center mb-2">
+                        <div class="flex">
+                            ${Array(5).fill().map((_, i) => `
+                                <svg class="w-5 h-5 ${i < feedback.rating ? 'text-yellow-400' : 'text-gray-300'}" 
+                                     fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                                </svg>
+                            `).join('')}
+                        </div>
+                    </div>
+                    <p class="text-gray-700">${feedback.text}</p>
+                </div>
+            </div>
+        `).join('');
+
+        // Insert the Supabase feedback cards at the beginning of the container
+        feedbackContainer.insertAdjacentHTML('afterbegin', feedbackHTML);
+
+    } catch (error) {
+        console.error('Error displaying feedback:', error);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log('DOM loaded - Initializing scripts...');
+
+    // Test Supabase connection when page loads
+    console.log('Page loaded, testing Supabase connection...');
+    const result = await testFeedbackConnection();
+    
+    if (result.error) {
+        console.error('Failed to connect to Supabase:', result.error);
+    } else {
+        console.log('Successfully connected to Supabase');
+        // Display feedback from Supabase
+        await displaySupabaseFeedback();
+    }
+
     // Add event listeners for Request Product buttons
     document.querySelectorAll('button').forEach(button => {
         if (button.textContent.includes('Request Product')) {
@@ -11,77 +95,217 @@ document.addEventListener('DOMContentLoaded', () => {
     // FAB and Modal Elements
     const fabButton = document.getElementById('fab-button');
     console.log('FAB Button Element:', fabButton); // Debug log
+    
+    // Verify button is properly configured
+    if (fabButton) {
+        console.log('FAB Button found with classes:', fabButton.className);
+        console.log('FAB Button is visible:', window.getComputedStyle(fabButton).display !== 'none');
+        console.log('FAB Button position:', window.getComputedStyle(fabButton).position);
+        console.log('FAB Button z-index:', window.getComputedStyle(fabButton).zIndex);
+    }
+
     const fabModal = document.getElementById('fab-modal');
     const closeModal = document.getElementById('close-modal');
     const modalButtons = fabModal.querySelectorAll('button:not(#close-modal)');
 
+    // Function to close the modal smoothly
+    const closeFabModal = () => {
+        if (!fabModal) return;
+        const modalContent = fabModal.querySelector('.bg-white');
+        if (modalContent) {
+            modalContent.classList.remove('translate-y-0');
+            // Listen for the transition to end before hiding
+            modalContent.addEventListener('transitionend', () => {
+                fabModal.classList.add('hidden');
+            }, { once: true }); // Remove listener after firing once
+        } else {
+            // Fallback if content not found, just hide modal
+            fabModal.classList.add('hidden');
+        }
+    };
+
     // Check if fabButton exists before adding listener
     if (fabButton) {
-        // Simple show/hide modal
+        console.log('Adding click listener to FAB button');
         fabButton.addEventListener('click', () => {
+            // alert('FAB button clicked!'); // Removed test alert
+            console.log('FAB Button clicked - testing event handler');
+            
+            // Visual feedback - Removed
+            // fabButton.style.backgroundColor = 'red';
+            // setTimeout(() => {
+            //     fabButton.style.backgroundColor = '';
+            // }, 500);
+            
             if (fabModal) {
-                fabModal.classList.remove('hidden');
-                // Force a reflow to ensure the transition works
-                fabModal.offsetHeight;
-                // Add a class to trigger the animation
-                fabModal.querySelector('.bg-white').classList.add('translate-y-0');
+                console.log('Attempting to show modal...');
+                const modalContent = fabModal.querySelector('.bg-white');
+                if (modalContent) {
+                    fabModal.classList.remove('hidden');
+                    fabModal.offsetHeight; // Force reflow
+                    modalContent.classList.add('translate-y-0');
+                } else {
+                    console.error('Modal content (.bg-white) not found');
+                }
+            } else {
+                console.error('FAB Modal element not found');
             }
         });
     } else {
-        console.error('FAB Button not found!'); // Error log if not found
+        console.error('FAB Button (#fab-button) not found in DOM');
     }
 
     // Check if closeModal exists before adding listener
-    if (closeModal && fabModal) {
-        closeModal.addEventListener('click', () => {
-            const modalContent = fabModal.querySelector('.bg-white');
-            modalContent.classList.remove('translate-y-0');
-            setTimeout(() => {
-                fabModal.classList.add('hidden');
-            }, 300); // Match the transition duration
-        });
+    if (closeModal) {
+        closeModal.addEventListener('click', closeFabModal);
+    } else {
+        console.error('Close modal button (#close-modal) not found!');
     }
 
-    // Check if modalButtons exist before adding listener
-    if (modalButtons.length > 0 && fabModal) {
-        modalButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                const action = button.textContent.trim();
-                if (action === 'Add Feedback') {
-                    window.location.href = 'add-feedback.html';
-                } else if (action === 'Submit Request') {
-                    window.location.href = 'search.html';
+    // Check if fabModal exists before adding listener for internal buttons and outside click
+    if (fabModal) {
+        // Actions for buttons/links inside the modal
+        const modalActions = fabModal.querySelectorAll('button:not(#close-modal), a'); // Include links too
+        modalActions.forEach(actionElement => {
+            actionElement.addEventListener('click', (event) => {
+                let actionText = '';
+                if (actionElement.tagName === 'A') {
+                     actionText = actionElement.querySelector('span')?.textContent.trim();
+                     console.log(`Modal Link Clicked: ${actionText} (href: ${actionElement.getAttribute('href')})`);
+                     // Let the browser handle navigation for links
+                     // We still close the modal after a short delay to allow navigation start
+                     setTimeout(closeFabModal, 100); 
+                } else { // It's a button
+                     actionText = actionElement.textContent.trim();
+                     console.log(`Modal Button Clicked: ${actionText}`);
+                     event.preventDefault(); // Prevent default button action
+                     if (actionText === 'Add Feedback') {
+                         window.location.href = 'add-feedback.html';
+                     }
+                     // Close the modal immediately for button clicks
+                     closeFabModal();
                 }
             });
         });
-    }
 
-    // Check if fabModal exists before adding listener
-    if (fabModal) {
-        // Close modal when clicking outside
+        // Close modal when clicking the background overlay
         fabModal.addEventListener('click', (e) => {
             if (e.target === fabModal) {
-                fabModal.classList.add('hidden');
+                console.log('Clicked outside modal content.');
+                closeFabModal();
+            }
+        });
+    } else {
+        console.error('FAB Modal element (#fab-modal) not found for internal/outside click listeners!');
+    }
+
+    // Camera Elements
+    const cameraButton = document.getElementById('camera-button');
+    const cameraOverlay = document.getElementById('camera-overlay');
+    const videoElement = document.getElementById('camera-view');
+    const captureButton = document.getElementById('capture-photo');
+    const cancelButton = document.getElementById('cancel-photo');
+    const photoReviewContainer = document.getElementById('photo-review-container');
+    const capturedPhotoPreview = document.getElementById('captured-photo-preview');
+
+    let stream = null;
+    let currentFacingMode = 'environment';
+
+    // Function to stop the camera stream
+    const stopCamera = () => {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            stream = null;
+        }
+        if (videoElement) {
+            videoElement.srcObject = null;
+        }
+        if (cameraOverlay) {
+            cameraOverlay.classList.add('hidden');
+        }
+        if (photoReviewContainer) {
+            photoReviewContainer.classList.add('hidden');
+        }
+    };
+
+    // Function to start the camera
+    const startCamera = async () => {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: currentFacingMode,
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
+                }
+            });
+            
+            if (videoElement) {
+                videoElement.srcObject = stream;
+                videoElement.play().catch(e => console.error("Video play failed:", e));
+            }
+            
+            if (cameraOverlay) {
+                cameraOverlay.classList.remove('hidden');
+                photoReviewContainer.classList.add('hidden');
+            }
+        } catch (error) {
+            console.error('Error accessing camera:', error);
+            alert('Failed to access camera. Please ensure camera permissions are granted.');
+        }
+    };
+
+    // Add event listeners for camera functionality
+    if (cameraButton) {
+        cameraButton.addEventListener('click', startCamera);
+    }
+
+    if (captureButton) {
+        captureButton.addEventListener('click', () => {
+            if (videoElement && videoElement.videoWidth) {
+                const canvas = document.createElement('canvas');
+                canvas.width = videoElement.videoWidth;
+                canvas.height = videoElement.videoHeight;
+                canvas.getContext('2d').drawImage(videoElement, 0, 0);
+                
+                const photoData = canvas.toDataURL('image/jpeg');
+                if (capturedPhotoPreview) {
+                    capturedPhotoPreview.src = photoData;
+                }
+                
+                // Store the photo in localStorage
+                localStorage.setItem('tempCapturedPhoto', photoData);
+                
+                // Show the photo review container
+                if (photoReviewContainer) {
+                    photoReviewContainer.classList.remove('hidden');
+                }
+                
+                // Update the Add Feedback link
+                const addFeedbackBtn = document.getElementById('add-feedback-photo-btn');
+                if (addFeedbackBtn) {
+                    addFeedbackBtn.href = 'add-feedback.html?photoSource=localStorage';
+                }
             }
         });
     }
 
-    // Camera Elements
-    const scanButton = document.getElementById('scan-button');
-    const cameraOverlay = document.getElementById('camera-overlay');
-    const videoElement = document.getElementById('camera-view');
-    const closeCameraButton = document.getElementById('close-camera');
-    const switchCameraButton = document.getElementById('switch-camera');
-    // const shutterButton = document.getElementById('shutter-button'); // Keep if needed
+    if (cancelButton) {
+        cancelButton.addEventListener('click', stopCamera);
+    }
 
     // Dictation elements
     const dictateButton = document.getElementById('dictate-button');
     const dictateOverlay = document.getElementById('dictate-overlay');
-    // const closeDictateButton = document.getElementById('close-dictate'); // Removed, replaced by stop-dictation
     const stopDictationButton = document.getElementById('stop-dictation');
     const speechIndicator = document.getElementById('speech-indicator'); // Updated ID
     const dictationStatus = document.getElementById('dictation-status'); // Updated ID
     const interimTranscriptDisplay = document.getElementById('interim-transcript'); // Updated ID
+    // --- NEW: Select additional dictation elements ---
+    const startDictationButton = document.getElementById('start-dictation');
+    const cancelDictationButton = document.getElementById('cancel-dictation');
+    const dictationActions = document.getElementById('dictation-actions');
+    const createFeedbackLink = document.getElementById('create-feedback-link');
+    // --- END NEW ---
 
     // Product Request Elements
     const requestCardsContainer = document.getElementById('request-cards-container');
@@ -113,8 +337,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const PULL_THRESHOLD = 70; // Pixels to pull down to trigger refresh
 
     // State Variables
-    let stream = null;
-    let currentFacingMode = 'environment'; // Start with rear camera
     let recognition = null; // Variable for Speech Recognition
     let lastFinalTranscript = ''; // Store the last complete transcript
     // let selectedProductInfo = { name: '', description: '', imgSrc: '', brand: '' }; // Removed chat-related state
@@ -127,66 +349,10 @@ document.addEventListener('DOMContentLoaded', () => {
         suggestedSummary: '',
         rating: 0,
         tags: ['Needs Attention'],
-        isCritical: false
+        is_critical: false
     };
 
     // --- Helper Functions --- (Camera, Dictation, Requests Display, Tabs) --- 
-
-    // Function to stop the camera stream
-    const stopCamera = () => {
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-            stream = null;
-        }
-        videoElement.srcObject = null;
-        cameraOverlay.classList.add('hidden');
-    };
-
-    // Function to start the camera with a specific facing mode
-    const startCamera = async (facingMode) => {
-        // Hide dictation if open
-        if (dictateOverlay && !dictateOverlay.classList.contains('hidden')) {
-            hideDictation(); // Call hideDictation to ensure recognition stops
-        }
-        stopCamera(); // Stop any existing stream first
-        currentFacingMode = facingMode;
-
-        console.log(`Attempting to start camera with facingMode: ${facingMode}`);
-
-        const constraints = {
-            video: {
-                facingMode: facingMode
-            }
-        };
-
-        try {
-            stream = await navigator.mediaDevices.getUserMedia(constraints);
-        } catch (err) {
-            console.error(`Error accessing camera with facingMode ${facingMode}:`, err);
-            // Fallback: If the desired mode fails, try the other mode
-            const fallbackMode = facingMode === 'user' ? 'environment' : 'user';
-            console.warn(`Falling back to facingMode: ${fallbackMode}`);
-            constraints.video.facingMode = fallbackMode;
-            try {
-                stream = await navigator.mediaDevices.getUserMedia(constraints);
-                currentFacingMode = fallbackMode; // Update facing mode if fallback succeeds
-            } catch (error) {
-                 console.error(`Error accessing fallback camera with facingMode ${fallbackMode}:`, error);
-                alert('Could not access the camera. Please ensure permissions are granted and try again.');
-                stopCamera(); // Ensure overlay is hidden if camera fails completely
-                return;
-            }
-        }
-
-        // Display the stream
-        if (stream) {
-            videoElement.srcObject = stream;
-            videoElement.play().catch(e => console.error("Video play failed:", e));
-            cameraOverlay.classList.remove('hidden');
-        } else {
-             stopCamera(); // Ensure overlay is hidden if stream is somehow null
-        }
-    };
 
     // --- Speech Recognition Setup ---
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -200,19 +366,32 @@ document.addEventListener('DOMContentLoaded', () => {
         recognition.onstart = () => {
             console.log('Speech recognition started');
             if (dictationStatus) dictationStatus.textContent = 'Listening...';
-            if (speechIndicator) speechIndicator.classList.add('circle-animating'); // Use updated ID
+            if (speechIndicator) speechIndicator.classList.add('circle-animating');
+            // --- NEW: Update button visibility on start ---
+            if (startDictationButton) startDictationButton.classList.add('hidden');
+            if (cancelDictationButton) cancelDictationButton.classList.add('hidden');
+            if (stopDictationButton) stopDictationButton.classList.remove('hidden');
+            // --- MODIFIED: Show actions if we have previous transcript ---
+            if (dictationActions && lastFinalTranscript.trim()) {
+                dictationActions.classList.remove('hidden');
+                dictationActions.style.zIndex = '9999'; // Ensure it's above overlay
+                dictationActions.querySelectorAll('a').forEach(link => {
+                    link.classList.remove('opacity-50', 'pointer-events-none');
+                    link.removeAttribute('aria-disabled');
+                });
+            }
+            // --- END MODIFIED ---
         };
 
         recognition.onaudiostart = () => {
             console.log('Audio capturing started');
             // Animation now handled by .circle-animating class in CSS via onstart/onerror/onend
-            if (dictationStatus) dictationStatus.textContent = 'Speaking...';
+            if (dictationStatus) dictationStatus.textContent = 'Listening...'; // Keep as Listening or remove status update here
         };
 
         recognition.onaudioend = () => {
-            console.log('Audio capturing ended');
-            // Animation handled by CSS
-             if (dictationStatus) dictationStatus.textContent = 'Processing...'; // Or back to 'Listening...' if continuous
+             console.log('Audio capturing ended');
+             // Removed status change to "Processing..."
         };
 
         recognition.onresult = (event) => {
@@ -220,40 +399,95 @@ document.addEventListener('DOMContentLoaded', () => {
             let currentFinalTranscript = '';
             for (let i = event.resultIndex; i < event.results.length; ++i) {
                 if (event.results[i].isFinal) {
-                    currentFinalTranscript += event.results[i][0].transcript;
+                    // --- MODIFIED: Append final results --- 
+                    const newFinalPart = event.results[i][0].transcript;
+                    lastFinalTranscript += (lastFinalTranscript ? ' ' : '') + newFinalPart; // Add space only if not empty
+                    currentFinalTranscript += newFinalPart + ' ';
                 } else {
                     interimTranscript += event.results[i][0].transcript;
                 }
             }
 
-            if (currentFinalTranscript) {
-                lastFinalTranscript = currentFinalTranscript; // Store the final part
-                // TODO: Handle the final transcript (e.g., process request)
-                console.log("Final Transcript Received: ", lastFinalTranscript);
-                // Maybe automatically hide dictation after final transcript?
-                // hideDictation(); 
+            // Log the cumulative final transcript as it builds
+            if (currentFinalTranscript.trim()) {
+                console.log("Cumulative Final Transcript: ", lastFinalTranscript.trim());
             }
 
             // Update the display text in real-time
             if (interimTranscriptDisplay) {
-                 interimTranscriptDisplay.textContent = interimTranscript; // Display only interim here
+                // --- MODIFIED: Show both final and interim ---
+                const displayText = lastFinalTranscript + (interimTranscript ? ' ' + interimTranscript : '');
+                interimTranscriptDisplay.textContent = displayText;
             }
-            if (dictationStatus) { // Keep showing 'Speaking' or 'Processing'
-                 dictationStatus.textContent = interimTranscript ? 'Speaking...' : 'Processing...';
+            
+            // --- MODIFIED: Enable actions if we have transcript ---
+            if (dictationActions && lastFinalTranscript.trim()) {
+                dictationActions.classList.remove('hidden');
+                dictationActions.style.zIndex = '9999'; // Ensure it's above overlay
+                dictationActions.querySelectorAll('a').forEach(link => {
+                    link.classList.remove('opacity-50', 'pointer-events-none');
+                    link.removeAttribute('aria-disabled');
+                    link.dataset.transcript = lastFinalTranscript.trim();
+                });
             }
 
+            if (dictationStatus) {
+                dictationStatus.textContent = interimTranscript ? 'Speaking...' : 'Listening...';
+            }
         };
 
         recognition.onerror = (event) => {
             console.error('Speech recognition error:', event.error);
             if (dictationStatus) dictationStatus.textContent = `Error: ${event.error}`; 
             if (speechIndicator) speechIndicator.classList.remove('circle-animating');
+            // --- NEW: Reset buttons on error ---
+            if (startDictationButton) startDictationButton.classList.remove('hidden');
+            if (cancelDictationButton) cancelDictationButton.classList.remove('hidden');
+            if (stopDictationButton) stopDictationButton.classList.add('hidden');
+            // --- MODIFIED: Ensure action links are reset on cancel --- 
+            if (dictationActions) {
+                 dictationActions.querySelectorAll('a').forEach(link => {
+                     link.classList.add('opacity-50', 'pointer-events-none');
+                     link.setAttribute('aria-disabled', 'true');
+                     delete link.dataset.transcript;
+                 });
+            }
+            // --- END NEW ---
         };
 
         recognition.onend = () => {
             console.log('Speech recognition service disconnected');
-             if (dictationStatus) dictationStatus.textContent = 'Tap to start'; // Reset text
-             if (speechIndicator) speechIndicator.classList.remove('circle-animating');
+            if (speechIndicator) speechIndicator.classList.remove('circle-animating');
+
+            // --- MODIFIED: Handle showing actions or resetting on end ---
+            if (lastFinalTranscript.trim()) {
+                console.log("Recognition ended with transcript:", lastFinalTranscript);
+                if (dictationStatus) dictationStatus.textContent = 'Dictation complete:';
+                if (interimTranscriptDisplay) interimTranscriptDisplay.textContent = lastFinalTranscript.trim();
+                if (speechIndicator) speechIndicator.classList.add('hidden');
+                if (stopDictationButton) stopDictationButton.classList.add('hidden');
+                if (startDictationButton) startDictationButton.classList.remove('hidden');
+                
+                // --- MODIFIED: Enable and show action buttons ---
+                if (dictationActions) {
+                    console.log('Enabling dictation action buttons.');
+                    dictationActions.classList.remove('hidden');
+                    dictationActions.style.zIndex = '9999'; // Ensure it's above overlay
+                    dictationActions.querySelectorAll('a').forEach(link => {
+                        link.classList.remove('opacity-50', 'pointer-events-none');
+                        link.removeAttribute('aria-disabled');
+                        link.dataset.transcript = lastFinalTranscript.trim();
+                    });
+                }
+            } else {
+                if (dictationStatus) dictationStatus.textContent = 'Tap Start to Dictate';
+                if (interimTranscriptDisplay) interimTranscriptDisplay.textContent = '';
+                if (startDictationButton) startDictationButton.classList.remove('hidden');
+                if (cancelDictationButton) cancelDictationButton.classList.remove('hidden');
+                if (stopDictationButton) stopDictationButton.classList.add('hidden');
+                if (dictationActions) dictationActions.classList.add('hidden');
+                if (speechIndicator) speechIndicator.classList.remove('hidden');
+            }
         };
 
     } else {
@@ -272,24 +506,36 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Showing dictation overlay...');
         if (dictateOverlay) {
             dictateOverlay.classList.remove('hidden');
-            if (recognition) {
-                try {
-                     console.log('Starting recognition...');
-                     recognition.start();
-                 } catch(e) {
-                     console.error("Recognition start failed: ", e);
-                     if (dictationStatus) dictationStatus.textContent = 'Mic busy or error.';
-                 }
-            } else if (dictationStatus) {
-                dictationStatus.textContent = 'Speech recognition not supported.';
+            // --- MODIFIED: Set initial state, don't start recognition automatically ---
+            if (dictationStatus) dictationStatus.textContent = 'Tap Start to Dictate';
+            if (speechIndicator) {
+                speechIndicator.classList.remove('hidden', 'circle-animating');
+            }
+            if (startDictationButton) startDictationButton.classList.remove('hidden');
+            if (cancelDictationButton) cancelDictationButton.classList.remove('hidden');
+            if (stopDictationButton) stopDictationButton.classList.add('hidden');
+            // --- MODIFIED: Keep actions hidden initially ---
+            if (dictationActions) {
+                dictationActions.classList.add('hidden');
+                dictationActions.querySelectorAll('a').forEach(link => {
+                    link.classList.add('opacity-50', 'pointer-events-none'); 
+                    link.setAttribute('aria-disabled', 'true');
+                });
+            }
+            // --- END MODIFIED ---
+            
+            if (!SpeechRecognition) {
+                if (dictationStatus) dictationStatus.textContent = 'Speech recognition not supported.';
+                if (startDictationButton) startDictationButton.disabled = true;
+                if (cancelDictationButton) cancelDictationButton.disabled = true;
             }
         }
     };
 
     // Function to hide the dictation overlay
-    const hideDictation = () => {
+    const hideDictation = (stopRecognition = true) => { // Added parameter
         console.log('Hiding dictation overlay...');
-        if (recognition) {
+        if (stopRecognition && recognition) { // Only stop if requested and exists
             try {
                 console.log('Stopping recognition...');
                 recognition.stop();
@@ -300,16 +546,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (dictateOverlay) {
             dictateOverlay.classList.add('hidden');
         }
-        // Optional: Process lastFinalTranscript here if needed upon closing
-        if (lastFinalTranscript) {
-            console.log("Processing transcript on close: ", lastFinalTranscript);
-            // Redirect to search page with the transcript as a query parameter
-            const searchQuery = encodeURIComponent(lastFinalTranscript.trim());
-            if (searchQuery) {
-                 window.location.href = `search.html?dictatedQuery=${searchQuery}`;
-            }
-            lastFinalTranscript = ''; // Clear after processing/redirect attempt
-        }
+        // --- NEW: Clear transcript when hiding completely ---
+        lastFinalTranscript = '';
+        if (interimTranscriptDisplay) interimTranscriptDisplay.textContent = '';
+         // --- END NEW ---
+          // --- NEW: Reset action button state on hide --- 
+          if (dictationActions) {
+              dictationActions.classList.add('hidden');
+              dictationActions.querySelectorAll('a').forEach(link => {
+                  link.classList.add('opacity-50', 'pointer-events-none');
+                  link.setAttribute('aria-disabled', 'true');
+                  delete link.dataset.transcript;
+              });
+          }
+          // --- END NEW ---
     };
 
     // --- Toast Notification --- (Keep as it's generally useful)
@@ -545,37 +795,16 @@ document.addEventListener('DOMContentLoaded', () => {
             newPageTitle = 'Menu';
         } // Add else if for chat if re-enabled
 
-        // Update Page Title
-        if (pageTitleElement) {
-            pageTitleElement.textContent = newPageTitle;
-        } else {
-            console.error('Page title element not found!');
-        }
+        
 
-        // Update Add Button Visibility
-        if (addRequestButton) {
-            if (targetButtonId === 'nav-menu') {
-                addRequestButton.classList.add('hidden'); // Hide Add button on Menu
-            } else {
-                addRequestButton.classList.remove('hidden'); // Show Add button otherwise
-            }
-        } else {
-            console.error('Add request button not found!');
-        }
+       
 
         // Update Nav Item Appearance - Deactivate all first
         navButtons.forEach(btn => {
             btn.classList.remove('active');
             btn.classList.add('inactive');
         });
-        // Activate the target button
-        const targetButton = document.getElementById(targetButtonId);
-        if (targetButton) {
-            targetButton.classList.remove('inactive');
-            targetButton.classList.add('active');
-        } else {
-            console.warn(`Target button not found: ${targetButtonId}`);
-        }
+       
 
         // Update Content Pane Visibility - Hide all first
         contentPanes.forEach(pane => {
@@ -597,59 +826,101 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         
-        // Remove old special handling logic
+        
     };
     // --- END: Content Pane Switching Logic ---
 
     // --- Event Listeners Setup ---
-    if (scanButton) {
-        scanButton.addEventListener('click', () => startCamera(currentFacingMode));
-    } else {
-        console.error("Scan button not found");
-    }
-
-    if (closeCameraButton) {
-        closeCameraButton.addEventListener('click', stopCamera);
-    } else {
-         console.error("Close camera button not found");
-    }
-
-    if (switchCameraButton) {
-        switchCameraButton.addEventListener('click', () => {
-            const newFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-            startCamera(newFacingMode);
+    if (dictateButton) {
+        dictateButton.addEventListener('click', () => {
+            showDictation();
         });
     } else {
-        console.error("Switch camera button not found");
-    }
-
-    if (dictateButton) {
-        dictateButton.addEventListener('click', showDictation);
+        console.error('Dictate button not found');
     }
 
     if (stopDictationButton) {
         stopDictationButton.addEventListener('click', hideDictation);
     }
 
-    // --- NEW: Bottom Nav Listeners ---
-    if (bottomNavRequests) {
-        bottomNavRequests.addEventListener('click', () => switchContentPane('nav-requests')); // Pass button ID
+    // --- NEW: Add listeners for Start and Cancel Dictation ---
+    if (startDictationButton) {
+        startDictationButton.addEventListener('click', () => {
+            if (recognition) {
+                // --- NEW: Clear previous transcript before starting --- 
+                lastFinalTranscript = ''; 
+                if (interimTranscriptDisplay) interimTranscriptDisplay.textContent = '';
+                if (dictationStatus) dictationStatus.textContent = 'Initializing...'; // Give feedback
+                // --- END NEW ---
+                try {
+                    console.log('Starting recognition via Start button...');
+                    recognition.start();
+                    // Visibility updates are handled in recognition.onstart
+                } catch(e) {
+                    console.error("Recognition start failed: ", e);
+                    if (dictationStatus) dictationStatus.textContent = 'Mic busy or error.';
+                    // Reset buttons if start fails immediately
+                    if (startDictationButton) startDictationButton.classList.remove('hidden');
+                    if (cancelDictationButton) cancelDictationButton.classList.remove('hidden');
+                    if (stopDictationButton) stopDictationButton.classList.add('hidden');
+                }
+            } else if (dictationStatus) {
+                 dictationStatus.textContent = 'Speech recognition not supported.';
+            }
+        });
     } else {
-        console.error("Requests nav button not found");
+        console.error('Start Dictation button not found');
     }
 
-    if (bottomNavFeedback) {
-        bottomNavFeedback.addEventListener('click', () => switchContentPane('nav-feedback')); // Pass button ID
+    if (cancelDictationButton) {
+        cancelDictationButton.addEventListener('click', () => {
+            console.log('Cancel dictation clicked.');
+            hideDictation(true); // Hide and ensure recognition stops
+             // --- MODIFIED: Ensure action links are reset on cancel --- 
+            if (dictationActions) {
+                 dictationActions.querySelectorAll('a').forEach(link => {
+                     link.classList.add('opacity-50', 'pointer-events-none');
+                     link.setAttribute('aria-disabled', 'true');
+                     delete link.dataset.transcript;
+                 });
+            }
+            // --- END MODIFIED ---
+        });
     } else {
-        console.error("Feedback nav button not found");
+        console.error('Cancel Dictation button not found');
     }
 
-     if (bottomNavMenu) {
-         bottomNavMenu.addEventListener('click', () => switchContentPane('nav-menu')); // Pass button ID
+    // --- NEW: Add listeners for Dictation Action Links ---
+    if (createFeedbackLink) {
+        createFeedbackLink.addEventListener('click', (e) => {
+            e.preventDefault(); // Prevent default link navigation
+            const transcript = e.currentTarget.dataset.transcript || '';
+            console.log('Create Feedback action clicked with transcript:', transcript);
+            // Redirect to feedback page with transcript as query parameter
+            window.location.href = `add-feedback.html?dictatedText=${encodeURIComponent(transcript)}`;
+            hideDictation(false); // Hide overlay without stopping recognition again
+        });
     } else {
-         console.error("Menu nav button not found");
+        console.error('Create Feedback link not found in dictation actions');
     }
-    // --- END: Bottom Nav Listeners ---
+
+    // Add listener for the "Request Product" link within dictation actions
+    // Assuming it's the second link within #dictation-actions
+    const requestProductLinkDictate = dictationActions ? dictationActions.querySelector('a:nth-child(2)') : null;
+    if (requestProductLinkDictate) {
+         requestProductLinkDictate.addEventListener('click', (e) => {
+             e.preventDefault();
+             // Assuming transcript is still stored from the createFeedbackLink setup, or re-fetch if needed
+             const transcript = createFeedbackLink?.dataset.transcript || lastFinalTranscript.trim() || '';
+             console.log('Request Product action clicked with transcript:', transcript);
+             // Redirect to request page with transcript
+             window.location.href = `request-product.html?dictatedText=${encodeURIComponent(transcript)}`;
+             hideDictation(false);
+         });
+    } else {
+        console.error('Request Product link not found in dictation actions');
+    }
+    // --- END NEW ---
 
     // --- NEW: Pull-to-refresh Handling ---
     const handleRefreshEnd = () => {
@@ -771,28 +1042,9 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     // --- END: Pull-to-refresh Handling ---
 
-    // --- NEW: Attach PTR Listeners ---
-    if (scrollableContent) {
-        scrollableContent.addEventListener('touchstart', handlePTRTouchStart, { passive: false });
-        scrollableContent.addEventListener('touchmove', handlePTRTouchMove, { passive: false });
-        scrollableContent.addEventListener('touchend', handlePTRTouchEnd);
-        scrollableContent.addEventListener('touchcancel', handlePTRTouchEnd);
-    } else {
-        console.error("Scrollable content area not found for PTR!");
-    }
-    // --- END: Attach PTR Listeners ---
+    
 
-    // --- NEW: Add FAB Listener ---
-    if (aiFabButton) {
-        aiFabButton.addEventListener('click', () => {
-            console.log("AI FAB Clicked!");
-            // TODO: Implement action for AI FAB click (e.g., open chat modal or navigate)
-             alert("AI Chat action not implemented yet."); // Placeholder action
-        });
-    } else {
-        console.error("AI FAB button not found!");
-    }
-    // --- END: Add FAB Listener ---
+    
 
     // Function to create a sample request card
     const createSampleRequest = () => {
@@ -1158,7 +1410,7 @@ document.addEventListener('DOMContentLoaded', () => {
             message: document.getElementById('feedback-message').value,
             suggestedSummary: document.getElementById('suggested-summary').value,
             rating: feedbackState.rating,
-            isCritical: document.getElementById('critical-safety').checked,
+            is_critical: document.getElementById('critical-safety').checked,
             timestamp: new Date().toISOString()
         };
 
@@ -1171,7 +1423,7 @@ document.addEventListener('DOMContentLoaded', () => {
             feedbacks.push(feedback);
             localStorage.setItem('productFeedbacks', JSON.stringify(feedbacks));
             
-            showToast('Feedback submitted successfully!');
+            showToast('Feedback submitted successfully! 3');
             hideFeedbackModal();
             resetFeedbackState();
             
@@ -1191,7 +1443,7 @@ document.addEventListener('DOMContentLoaded', () => {
             suggestedSummary: '',
             rating: 0,
             tags: ['Needs Attention'],
-            isCritical: false
+            is_critical: false
         };
         document.getElementById('feedback-message').value = '';
         document.getElementById('preview-section').classList.add('hidden');
@@ -1312,7 +1564,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <h3 class="text-lg font-medium text-gray-900">${feedback.detectedItem || 'Product Feedback'}</h3>
                             <p class="text-gray-500">${new Date(feedback.timestamp).toLocaleString()}</p>
                         </div>
-                        ${feedback.isCritical ? `
+                        ${feedback.is_critical ? `
                             <span class="text-xs font-medium px-2 py-1 rounded-full bg-red-100 text-red-700">Critical</span>
                         ` : ''}
                     </div>
@@ -1347,10 +1599,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Tab Switching
     const tabs = document.querySelectorAll('.tab-button-underline');
-    const contentAreas = document.querySelectorAll('.content-area');
+    const contentAreas = document.querySelectorAll('.content-pane'); // Updated selector
 
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
+            // Get the target content pane ID from the button's data attribute
+            const targetContentId = tab.getAttribute('data-tab-button');
+            if (!targetContentId) return; // Exit if no target ID found
+
             // Remove active class from all tabs
             tabs.forEach(t => {
                 t.classList.remove('active');
@@ -1362,13 +1618,15 @@ document.addEventListener('DOMContentLoaded', () => {
             tab.classList.add('active');
 
             // Update content visibility
-            const targetContent = tab.getAttribute('data-content');
             contentAreas.forEach(area => {
-                area.classList.add('hidden');
+                if (area.id === targetContentId) {
+                    area.classList.remove('content-pane-hidden');
+                    area.classList.add('content-pane-visible');
+                } else {
+                    area.classList.add('content-pane-hidden');
+                    area.classList.remove('content-pane-visible');
+                }
             });
-            if (targetContent) {
-                document.getElementById(targetContent)?.classList.remove('hidden');
-            }
         });
     });
 
@@ -1402,7 +1660,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="flex justify-between items-start mb-4">
                 <div class="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-blue-500">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
                     </svg>
                 </div>
                 <span class="bg-yellow-50 text-yellow-800 text-xs font-medium px-2.5 py-1 rounded">${request.status}</span>
@@ -1454,5 +1712,47 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Add event listeners for Request Product buttons
+    // Initialize notifications system
+    initNotifications(); // Commented out temporarily
+    
+    // Add offline/online event handlers
+    window.addEventListener('online', async () => {
+        console.log('Back online. Syncing offline data...');
+        try {
+            await processOfflineQueue(); // Commented out temporarily
+            // Show a success message
+            const offlineStatusEl = document.getElementById('offline-status');
+            if (offlineStatusEl) {
+                offlineStatusEl.textContent = 'Back online! Synced offline data.';
+                offlineStatusEl.classList.remove('bg-yellow-500', 'hidden');
+                offlineStatusEl.classList.add('bg-green-500');
+                setTimeout(() => {
+                    offlineStatusEl.classList.add('hidden');
+                }, 3000);
+            }
+        } catch (error) {
+            console.error('Error processing offline queue:', error);
+        }
+    });
+    
+    window.addEventListener('offline', () => {
+        console.log('Offline mode. Data will be saved locally.');
+        // Show offline message
+        const offlineStatusEl = document.getElementById('offline-status');
+        if (offlineStatusEl) {
+            offlineStatusEl.textContent = 'You are offline. Data will be saved locally.';
+            offlineStatusEl.classList.remove('bg-green-500', 'hidden');
+            offlineStatusEl.classList.add('bg-yellow-500');
+        }
+    });
+    
+    // Initial offline check
+    if (!navigator.onLine) {
+        const offlineStatusEl = document.getElementById('offline-status');
+        if (offlineStatusEl) {
+            offlineStatusEl.textContent = 'You are offline. Data will be saved locally.';
+            offlineStatusEl.classList.remove('hidden', 'bg-green-500');
+            offlineStatusEl.classList.add('bg-yellow-500');
+        }
+    }
 }); // End DOMContentLoaded 
