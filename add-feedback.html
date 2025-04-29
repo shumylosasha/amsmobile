@@ -5,6 +5,1058 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Add Feedback - AMS Mobile</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+        import { saveFeedback } from './db-utils.js';
+        import supabase from './supabase.js';
+        
+        // Authentication function
+        async function signInUser() {
+            try {
+                // You can replace these with actual user credentials
+                const { data, error } = await supabase.auth.signInWithPassword({
+                    email: 'test@example.com',
+                    password: 'test123'
+                });
+                
+                if (error) {
+                    console.error('Authentication error:', error.message);
+                    // Try signing up if sign in fails
+                    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+                        email: 'test@example.com',
+                        password: 'test123'
+                    });
+                    
+                    if (signUpError) {
+                        console.error('Sign up error:', signUpError.message);
+                    } else {
+                        console.log('User signed up:', signUpData);
+                    }
+                } else {
+                    console.log('User authenticated:', data);
+                }
+            } catch (error) {
+                console.error('Authentication error:', error);
+            }
+        }
+
+        // Function to compress image
+        function compressImage(imageData, maxWidth = 1024, maxHeight = 1024, quality = 0.8) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+
+                    // Calculate new dimensions
+                    if (width > height) {
+                        if (width > maxWidth) {
+                            height = Math.round((height * maxWidth) / width);
+                            width = maxWidth;
+                        }
+                    } else {
+                        if (height > maxHeight) {
+                            width = Math.round((width * maxHeight) / height);
+                            height = maxHeight;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    // Convert to JPEG with compression
+                    const compressedData = canvas.toDataURL('image/jpeg', quality);
+                    resolve(compressedData);
+                };
+                img.src = imageData;
+            });
+        }
+
+        // Function to upload image to Supabase Storage
+        async function uploadFeedbackImage(imageData) {
+            try {
+                // Log the start of the process
+                console.log('Starting image upload process...');
+
+                // Compress image before upload
+                console.log('Compressing image...');
+                const compressedImage = await compressImage(imageData);
+                console.log('Image compressed successfully');
+
+                // Convert base64 to blob
+                console.log('Converting to blob...');
+                const base64Data = compressedImage.split(',')[1];
+                const byteCharacters = atob(base64Data);
+                const byteArrays = [];
+                
+                for (let offset = 0; offset < byteCharacters.length; offset += 1024) {
+                    const slice = byteCharacters.slice(offset, offset + 1024);
+                    const byteNumbers = new Array(slice.length);
+                    for (let i = 0; i < slice.length; i++) {
+                        byteNumbers[i] = slice.charCodeAt(i);
+                    }
+                    const byteArray = new Uint8Array(byteNumbers);
+                    byteArrays.push(byteArray);
+                }
+                
+                const blob = new Blob(byteArrays, { type: 'image/jpeg' });
+                console.log('Blob created, size:', Math.round(blob.size / 1024), 'KB');
+
+                // Check authentication
+                console.log('Checking authentication...');
+                const { data: { user }, error: authError } = await supabase.auth.getUser();
+                if (authError) {
+                    console.error('Authentication error:', {
+                        message: authError.message,
+                        status: authError.status,
+                        details: authError
+                    });
+                    throw new Error(`Authentication failed: ${authError.message}`);
+                }
+                if (!user) {
+                    throw new Error('No authenticated user found');
+                }
+                console.log('Authentication successful, user:', user.id);
+
+                const bucketName = 'feedback-images';
+                const fileName = `feedback-${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+                console.log('Generated filename:', fileName);
+
+                // Attempt upload
+                console.log('Starting file upload to bucket:', bucketName);
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from(bucketName)
+                    .upload(`public/${fileName}`, blob, {
+                        cacheControl: '3600',
+                        upsert: false,
+                        contentType: 'image/jpeg'
+                    });
+
+                if (uploadError) {
+                    console.error('Upload error:', {
+                        message: uploadError.message,
+                        status: uploadError.status,
+                        statusText: uploadError.statusText,
+                        details: uploadError
+                    });
+                    throw uploadError;
+                }
+
+                console.log('File uploaded successfully:', uploadData);
+
+                // Get public URL
+                console.log('Getting public URL...');
+                const { data: urlData, error: urlError } = supabase.storage
+                    .from(bucketName)
+                    .getPublicUrl(`public/${fileName}`);
+
+                if (urlError) {
+                    console.error('URL generation error:', {
+                        message: urlError.message,
+                        status: urlError.status,
+                        details: urlError
+                    });
+                    throw urlError;
+                }
+
+                const publicUrl = urlData.publicUrl;
+                console.log('Public URL generated:', publicUrl);
+                return publicUrl;
+
+            } catch (error) {
+                console.error('Detailed upload error:', {
+                    message: error.message,
+                    name: error.name,
+                    code: error.code,
+                    status: error.status,
+                    statusText: error.statusText,
+                    details: error.details,
+                    hint: error.hint,
+                    stack: error.stack
+                });
+                
+                alert(`Image upload failed: ${error.message}\nPlease check browser console for details.`);
+                return null;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Sign in the user when the page loads
+            await signInUser();
+            
+            // Get the feedback text from URL parameters
+            const urlParams = new URLSearchParams(window.location.search);
+            const feedbackText = urlParams.get('feedback');
+            const photoData = urlParams.get('photo');
+            const photoSource = urlParams.get('photoSource');
+            
+            // If there's feedback text in the URL, populate the textarea
+            if (feedbackText) {
+                const feedbackTextarea = document.getElementById('feedback-message');
+                if (feedbackTextarea) {
+                    feedbackTextarea.value = feedbackText;
+                    // Trigger AI analysis if it exists
+                    if (typeof triggerAIAnalysis === 'function') {
+                        triggerAIAnalysis();
+                    }
+                }
+            }
+            
+            let photoDataToUse = photoData;
+            
+            // If photo is in localStorage, retrieve it
+            if (photoSource === 'localStorage') {
+                photoDataToUse = localStorage.getItem('tempCapturedPhoto');
+                // Clear from localStorage after retrieving to free up space
+                localStorage.removeItem('tempCapturedPhoto');
+            }
+            
+            // If there's photo data, show it in the preview
+            if (photoDataToUse) {
+                const photoPreview = document.getElementById('photo-preview');
+                const removePhotoBtn = document.getElementById('remove-photo');
+                
+                if (photoPreview) {
+                    photoPreview.src = photoDataToUse;
+                    photoPreview.style.display = 'block';
+                    
+                    // Show the remove button
+                    if (removePhotoBtn) {
+                        removePhotoBtn.classList.remove('hidden');
+                    }
+                    
+                    // Store the photo in the feedback state
+                    feedbackState.photo = photoDataToUse;
+                    
+                    // Simulate AI product detection
+                    detectProductInPhoto(photoDataToUse);
+                }
+            }
+            
+            // Product categories and items data
+            const productData = {
+                categories: [
+                    {
+                        id: 'protective',
+                        name: 'Protective Equipment',
+                        items: [
+                            { id: 'gloves-m', name: 'Gloves - Size M', image: 'https://www.gloves.com/cdn/shop/articles/maskmedicare-shop-zCsup0tF-q4-unsplash.jpg?v=1673613431' },
+                            { id: 'gloves-l', name: 'Gloves - Size L', image: 'https://www.gloves.com/cdn/shop/articles/maskmedicare-shop-zCsup0tF-q4-unsplash.jpg?v=1673613431' },
+                            { id: 'masks', name: 'Masks - Type IIR', image: 'https://hdbrows.com/shop/pro/media/catalog/product/cache/83883c3d58d0958e9d4c7e2cf62df9ac/t/y/type-iir-mask.jpg' }
+                        ]
+                    },
+                    {
+                        id: 'surgical',
+                        name: 'Surgical Instruments',
+                        items: [
+                            { id: 'scissors', name: 'Surgical Scissors', image: 'https://cdn.webshopapp.com/shops/308248/files/472938159/325x325x2/medipharchem-surgical-scissors-st-st-curved.jpg' },
+                            { id: 'forceps', name: 'Forceps', image: 'https://cdn.webshopapp.com/shops/308248/files/472938159/325x325x2/medipharchem-surgical-scissors-st-st-curved.jpg' }
+                        ]
+                    },
+                    {
+                        id: 'monitoring',
+                        name: 'Monitoring Equipment',
+                        items: [
+                            { id: 'bp-monitor', name: 'Blood Pressure Monitor', image: 'https://cdn.webshopapp.com/shops/308248/files/472938159/325x325x2/medipharchem-surgical-scissors-st-st-curved.jpg' },
+                            { id: 'thermometer', name: 'Digital Thermometer', image: 'https://cdn.webshopapp.com/shops/308248/files/472938159/325x325x2/medipharchem-surgical-scissors-st-st-curved.jpg' }
+                        ]
+                    }
+                ]
+            };
+
+            // State
+            let feedbackState = {
+                message: '',
+                photo: null,
+                rating: 0,
+                isCritical: false,
+                selectedProduct: null,
+                method: 'text' // Default method
+            };
+
+            let currentCategory = null;
+
+            // Product selector elements
+            const productButton = document.getElementById('product-selector-button');
+            const productDropdown = document.getElementById('product-dropdown');
+            const productOverlay = document.getElementById('product-overlay');
+            const productList = document.getElementById('product-list');
+            const breadcrumb = document.getElementById('product-breadcrumb');
+
+            // Show product selector
+            productButton.addEventListener('click', () => {
+                productDropdown.classList.add('active');
+                productOverlay.classList.add('active');
+                if (!currentCategory) {
+                    showCategories();
+                }
+            });
+
+            // Hide product selector
+            productOverlay.addEventListener('click', () => {
+                productDropdown.classList.remove('active');
+                productOverlay.classList.remove('active');
+                currentCategory = null;
+                updateBreadcrumb();
+            });
+
+            // Function to show categories
+            function showCategories() {
+                productList.innerHTML = productData.categories.map(category => `
+                    <div class="category-item" data-category-id="${category.id}">
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-900">${category.name}</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                            </svg>
+                        </div>
+                    </div>
+                `).join('');
+
+                // Show suggestions if there's feedback text
+                const feedbackText = document.getElementById('feedback-message').value;
+                if (feedbackText) {
+                    showSuggestions(feedbackText);
+                } else {
+                    document.getElementById('suggestions-section').style.display = 'none';
+                }
+
+                // Add click handlers for categories
+                document.querySelectorAll('.category-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        const categoryId = item.dataset.categoryId;
+                        currentCategory = productData.categories.find(c => c.id === categoryId);
+                        showProducts(currentCategory);
+                        updateBreadcrumb();
+                    });
+                });
+            }
+
+            // Function to show suggestions
+            function showSuggestions(feedbackText) {
+                const suggestionsSection = document.getElementById('suggestions-section');
+                const suggestionsList = document.getElementById('suggestions-list');
+                
+                // Show the section
+                suggestionsSection.style.display = 'block';
+                
+                // Get all products
+                const allProducts = productData.categories.flatMap(c => c.items);
+                
+                // Simulate AI suggestions based on feedback text
+                // In a real app, this would use actual AI/ML to suggest products
+                const suggestedProducts = allProducts.slice(0, 3); // Just take first 3 as example
+                
+                suggestionsList.innerHTML = suggestedProducts.map(product => `
+                    <div class="product-item" data-product-id="${product.id}">
+                        <img src="${product.image}" alt="${product.name}">
+                        <span class="text-gray-900">${product.name}</span>
+                    </div>
+                `).join('');
+                
+                // Add click handlers for suggested products
+                document.querySelectorAll('#suggestions-list .product-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        const productId = item.dataset.productId;
+                        const selectedProduct = allProducts.find(p => p.id === productId);
+                        selectProduct(selectedProduct);
+                    });
+                });
+            }
+
+            // Update feedback message listener to refresh suggestions
+            const feedbackMessage = document.getElementById('feedback-message');
+            if (feedbackMessage) {
+                feedbackMessage.addEventListener('input', () => {
+                    if (productDropdown.classList.contains('active')) {
+                        showSuggestions(feedbackMessage.value);
+                    }
+                });
+            }
+
+            function showProducts(category) {
+                productList.innerHTML = category.items.map(item => `
+                    <div class="product-item" data-product-id="${item.id}">
+                        <img src="${item.image}" alt="${item.name}">
+                        <span class="text-gray-900">${item.name}</span>
+                    </div>
+                `).join('');
+
+                // Add click handlers for products
+                document.querySelectorAll('.product-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        const productId = item.dataset.productId;
+                        const selectedProduct = category.items.find(p => p.id === productId);
+                        selectProduct(selectedProduct);
+                    });
+                });
+            }
+
+            function updateBreadcrumb() {
+                if (currentCategory) {
+                    breadcrumb.innerHTML = `
+                        <span class="breadcrumb-item" id="category-back">Categories</span>
+                        <span class="breadcrumb-separator">/</span>
+                        <span class="breadcrumb-item active">${currentCategory.name}</span>
+                    `;
+                    document.getElementById('category-back').addEventListener('click', () => {
+                        currentCategory = null;
+                        showCategories();
+                        updateBreadcrumb();
+                    });
+                } else {
+                    breadcrumb.innerHTML = '<span class="breadcrumb-item active">Categories</span>';
+                }
+            }
+
+            function selectProduct(product) {
+                feedbackState.selectedProduct = product;
+                document.getElementById('selected-product-text').textContent = product.name;
+                productButton.classList.add('selected');
+                productDropdown.classList.remove('active');
+                productOverlay.classList.remove('active');
+                currentCategory = null;
+                updateBreadcrumb();
+            }
+
+            // Initialize categories view
+            showCategories();
+
+            let stream = null;
+
+            // Camera elements
+            const cameraContainer = document.getElementById('camera-container');
+            const cameraPreview = document.getElementById('camera-preview');
+            const photoPreview = document.getElementById('photo-preview');
+            const captureButton = document.getElementById('capture-photo');
+            const cancelButton = document.getElementById('cancel-photo');
+
+            // Camera button
+            const cameraButton = document.getElementById('camera-feedback');
+            if (cameraButton) {
+                cameraButton.addEventListener('click', async () => {
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia({ 
+                            video: { 
+                                facingMode: 'environment',
+                                width: { ideal: 1920 },
+                                height: { ideal: 1080 }
+                            } 
+                        });
+                        cameraPreview.srcObject = stream;
+                        cameraContainer.style.display = 'block';
+                        feedbackState.method = 'photo'; // Set method to photo when camera is used
+                    } catch (error) {
+                        console.error('Error accessing camera:', error);
+                        alert('Failed to access camera. Please ensure camera permissions are granted.');
+                    }
+                });
+            }
+
+            // Capture photo
+            if (captureButton) {
+                captureButton.addEventListener('click', async () => {
+                    const canvas = document.createElement('canvas');
+                    // Set canvas size to a reasonable max size
+                    const maxWidth = 1920;
+                    const maxHeight = 1080;
+                    let width = cameraPreview.videoWidth;
+                    let height = cameraPreview.videoHeight;
+
+                    // Calculate new dimensions while maintaining aspect ratio
+                    if (width > height) {
+                        if (width > maxWidth) {
+                            height = Math.round((height * maxWidth) / width);
+                            width = maxWidth;
+                        }
+                    } else {
+                        if (height > maxHeight) {
+                            width = Math.round((width * maxHeight) / height);
+                            height = maxHeight;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    canvas.getContext('2d').drawImage(cameraPreview, 0, 0, width, height);
+                    
+                    // Store photo in state and show preview
+                    feedbackState.photo = canvas.toDataURL('image/jpeg', 0.8); // Compress at capture time
+                    photoPreview.src = feedbackState.photo;
+                    photoPreview.style.display = 'block';
+                    
+                    // Clean up camera
+                    stopCamera();
+
+                    // Show remove button
+                    const removePhotoBtn = document.getElementById('remove-photo');
+                    if (removePhotoBtn) {
+                        removePhotoBtn.classList.remove('hidden');
+                    }
+
+                    // Simulate AI product detection
+                    detectProductInPhoto(feedbackState.photo);
+                });
+            }
+
+            // Cancel photo
+            if (cancelButton) {
+                cancelButton.addEventListener('click', stopCamera);
+            }
+
+            function stopCamera() {
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                    stream = null;
+                }
+                cameraContainer.style.display = 'none';
+            }
+
+            // Dictation elements
+            const dictationContainer = document.getElementById('dictation-container');
+            const dictationPulse = document.getElementById('dictation-pulse');
+            const dictationText = document.getElementById('dictation-text');
+            const startDictationBtn = document.getElementById('start-dictation');
+            const stopDictationBtn = document.getElementById('stop-dictation');
+            const cancelDictationBtn = document.getElementById('cancel-dictation');
+            
+            let recognition = null;
+            let isListening = false;
+            
+            // Initialize speech recognition
+            function initializeSpeechRecognition() {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SpeechRecognition) {
+                    alert('Speech recognition is not supported in your browser.');
+                    return null;
+                }
+                
+                const recognition = new SpeechRecognition();
+                recognition.continuous = true;
+                recognition.interimResults = true;
+                recognition.lang = 'en-US';
+                
+                // Set up recognition handlers
+                setupRecognitionHandlers(recognition);
+                
+                return recognition;
+            }
+            
+            // Dictation button
+            const dictateButton = document.getElementById('dictate-feedback');
+            if (dictateButton) {
+                dictateButton.addEventListener('click', () => {
+                    dictationContainer.style.display = 'flex';
+                    dictationText.textContent = 'Tap Start to begin speaking...';
+                    startDictationBtn.style.display = 'flex';
+                    stopDictationBtn.style.display = 'none';
+                    dictationPulse.classList.remove('listening');
+                    feedbackState.method = 'voice'; // Set method to voice when dictation is used
+                    
+                    // Initialize recognition if not already done
+                    if (!recognition) {
+                        recognition = initializeSpeechRecognition();
+                    }
+                });
+            }
+            
+            // Start dictation
+            if (startDictationBtn) {
+                startDictationBtn.addEventListener('click', () => {
+                    if (!recognition) {
+                        recognition = initializeSpeechRecognition();
+                        if (!recognition) return;
+                    }
+                    
+                    recognition.start();
+                    isListening = true;
+                    dictationPulse.classList.add('listening');
+                    startDictationBtn.style.display = 'none';
+                    stopDictationBtn.style.display = 'flex';
+                    dictationText.textContent = 'Listening...';
+                });
+            }
+            
+            // Stop dictation
+            if (stopDictationBtn) {
+                stopDictationBtn.addEventListener('click', () => {
+                    if (recognition && isListening) {
+                        recognition.stop();
+                        isListening = false;
+                        dictationPulse.classList.remove('listening');
+                        
+                        // Show analyzing card
+                        const aiDetectionNotice = document.getElementById('ai-detection-notice');
+                        aiDetectionNotice.classList.remove('hidden');
+                        aiDetectionNotice.innerHTML = `
+                            <div class="bg-blue-50 rounded-md p-3 mt-2">
+                                <div class="flex items-center">
+                                    <div class="flex-shrink-0">
+                                        <svg class="animate-spin h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                    </div>
+                                    <div class="ml-3">
+                                        <p class="text-sm text-blue-700">Analyzing feedback...</p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+
+                        // Simulate analysis delay
+                        setTimeout(() => {
+                            dictationContainer.style.display = 'none';
+                            triggerAIAnalysis();
+                        }, 2000);
+                    }
+                });
+            }
+            
+            // Cancel dictation
+            if (cancelDictationBtn) {
+                cancelDictationBtn.addEventListener('click', () => {
+                    if (recognition && isListening) {
+                        recognition.abort();
+                        isListening = false;
+                    }
+                    
+                    // Show analyzing card
+                    const aiDetectionNotice = document.getElementById('ai-detection-notice');
+                    aiDetectionNotice.classList.remove('hidden');
+                    aiDetectionNotice.innerHTML = `
+                        <div class="bg-blue-50 rounded-md p-3 mt-2">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <svg class="animate-spin h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                </div>
+                                <div class="ml-3">
+                                    <p class="text-sm text-blue-700">Analyzing feedback...</p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    // Simulate analysis delay
+                    setTimeout(() => {
+                        dictationContainer.style.display = 'none';
+                        triggerAIAnalysis();
+                    }, 2000);
+                });
+            }
+            
+            // Function to trigger AI analysis
+            function triggerAIAnalysis() {
+                const dictatedText = document.getElementById('feedback-message').value;
+                if (dictatedText) {
+                    // Show AI analysis notice
+                    const aiDetectionNotice = document.getElementById('ai-detection-notice');
+                    aiDetectionNotice.innerHTML = `
+                        <div class="bg-blue-50 rounded-md p-3 mt-2">
+                            <div class="flex">
+                                <div class="flex-shrink-0">
+                                    <svg class="h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+                                    </svg>
+                                </div>
+                                <div class="ml-3 flex-1">
+                                    <p class="text-sm text-blue-700">
+                                        AI Analysis Complete: Based on your feedback, we've pre-selected relevant product and rating.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    // Auto-select a product (using the first product from the first category as an example)
+                    const firstProduct = productData.categories[0].items[0];
+                    selectProduct(firstProduct);
+
+                    // Set rating to 3 stars
+                    const ratingStars = document.querySelectorAll('.rating-star');
+                    ratingStars.forEach((star, index) => {
+                        if (index < 3) {
+                            star.classList.remove('text-gray-300');
+                            star.classList.add('text-yellow-400');
+                        } else {
+                            star.classList.remove('text-yellow-400');
+                            star.classList.add('text-gray-300');
+                        }
+                    });
+                    currentRating = 3;
+
+                    // Add some animation to the selected product
+                    const productButton = document.getElementById('product-selector-button');
+                    productButton.style.animation = 'pulse 2s';
+                    setTimeout(() => productButton.style.animation = '', 2000);
+                }
+            }
+            
+            // Handle speech recognition events
+            function setupRecognitionHandlers(recognition) {
+                recognition.onresult = (event) => {
+                    let finalTranscript = '';
+                    let interimTranscript = '';
+                    
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        const transcript = event.results[i][0].transcript;
+                        if (event.results[i].isFinal) {
+                            finalTranscript += transcript;
+                        } else {
+                            interimTranscript += transcript;
+                        }
+                    }
+                    
+                    if (finalTranscript) {
+                        const feedbackTextarea = document.getElementById('feedback-message');
+                        const currentText = feedbackTextarea.value;
+                        feedbackTextarea.value = currentText + (currentText ? ' ' : '') + finalTranscript;
+                    }
+                    
+                    dictationText.textContent = interimTranscript || 'Listening...';
+                };
+                
+                recognition.onerror = (event) => {
+                    if (event.error === 'no-speech') {
+                        dictationText.textContent = 'No speech detected. Try again.';
+                    } else {
+                        console.error('Speech recognition error:', event.error);
+                        dictationText.textContent = 'Error occurred. Please try again.';
+                    }
+                    dictationPulse.classList.remove('listening');
+                    startDictationBtn.style.display = 'flex';
+                    stopDictationBtn.style.display = 'none';
+                };
+                
+                recognition.onend = () => {
+                    isListening = false;
+                    dictationPulse.classList.remove('listening');
+                    if (dictationContainer.style.display === 'flex') {
+                        startDictationBtn.style.display = 'flex';
+                        stopDictationBtn.style.display = 'none';
+                        dictationText.textContent = 'Tap Start to begin speaking...';
+                    }
+                };
+            }
+
+            // Add critical safety checkbox handler
+            const criticalSafetyCheckbox = document.getElementById('critical-safety');
+            if (criticalSafetyCheckbox) {
+                criticalSafetyCheckbox.addEventListener('change', (e) => {
+                    feedbackState.isCritical = e.target.checked;
+                });
+            }
+
+            // Text input handler
+            const feedbackTextarea = document.getElementById('feedback-message');
+            if (feedbackTextarea) {
+                feedbackTextarea.addEventListener('input', () => {
+                    if (!feedbackState.photo && feedbackState.method !== 'voice') {
+                        feedbackState.method = 'text'; // Set method to text when typing
+                    }
+                });
+            }
+
+            // Submit button
+            const submitButton = document.getElementById('submit-feedback');
+            if (submitButton) {
+                submitButton.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    console.log('Starting feedback submission process...');
+
+                    try {
+                        const feedbackMessage = document.getElementById('feedback-message').value;
+                        const selectedProduct = document.getElementById('selected-product-text').textContent;
+                        // Fix: Get the highest selected rating by finding the last yellow star
+                        const ratingStars = document.querySelectorAll('.rating-star');
+                        let selectedRating = 0;
+                        for (let i = ratingStars.length - 1; i >= 0; i--) {
+                            if (ratingStars[i].classList.contains('text-yellow-400')) {
+                                selectedRating = parseInt(ratingStars[i].getAttribute('data-rating'));
+                                break;
+                            }
+                        }
+                        const isCritical = document.getElementById('critical-safety').checked;
+
+                        // Validation
+                        if (!feedbackMessage) {
+                            throw new Error('Please enter feedback message');
+                        }
+                        if (selectedProduct === 'Select Product') {
+                            throw new Error('Please select a product');
+                        }
+                        if (!selectedRating) {
+                            throw new Error('Please select a rating');
+                        }
+
+                        // Upload image if exists
+                        let imageUrl = null;
+                        if (feedbackState.photo) {
+                            console.log('Photo detected, starting upload...');
+                            try {
+                                imageUrl = await uploadFeedbackImage(feedbackState.photo);
+                                if (imageUrl) {
+                                    console.log('Image upload successful:', imageUrl);
+                                } else {
+                                    console.warn('Image upload failed, continuing without image');
+                                }
+                            } catch (uploadError) {
+                                console.error('Image upload error:', uploadError);
+                                // Continue with submission without image
+                            }
+                        }
+
+                        const feedbackData = {
+                            text: feedbackMessage,
+                            product: selectedProduct,
+                            rating: selectedRating,
+                            is_critical: isCritical,
+                            method: feedbackState.method,
+                            timestamp: new Date().toISOString(),
+                            user_id: (await supabase.auth.getUser()).data.user?.id,
+                            image_url: imageUrl
+                        };
+
+                        console.log('Submitting feedback:', feedbackData);
+                        const result = await saveFeedback(feedbackData);
+                        console.log('Feedback saved successfully:', result);
+                        window.location.href = 'index.html';
+                    } catch (error) {
+                        console.error('Submission error:', {
+                            message: error.message,
+                            name: error.name,
+                            code: error.code,
+                            status: error.status,
+                            statusText: error.statusText,
+                            details: error.details,
+                            hint: error.hint
+                        });
+                        // Show error in a more user-friendly way
+                        const errorMessage = document.getElementById('error-message');
+                        if (errorMessage) {
+                            errorMessage.textContent = error.message;
+                            errorMessage.classList.remove('hidden');
+                        }
+                    }
+                });
+            }
+
+            // AI product detection
+            function detectProductInPhoto(photoData) {
+                // Show loading state
+                const aiDetectionNotice = document.getElementById('ai-detection-notice');
+                const photoPreview = document.getElementById('photo-preview');
+                
+                // Add analyzing class to photo
+                if (photoPreview) {
+                    photoPreview.classList.add('analyzing');
+                }
+                
+                aiDetectionNotice.classList.remove('hidden');
+                aiDetectionNotice.innerHTML = `
+                    <div class="bg-blue-50 rounded-md p-3 mt-2">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0">
+                                <svg class="animate-spin h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            </div>
+                            <div class="ml-3">
+                                <p class="text-sm text-blue-700">Analyzing photo for product detection...</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // Simulate API delay
+                setTimeout(() => {
+                    // Get all products
+                    const allProducts = productData.categories.flatMap(c => c.items);
+                    
+                    // Simulate AI detection with 80% confidence
+                    const detectedProduct = allProducts[Math.floor(Math.random() * allProducts.length)];
+                    
+                    // Update UI with detection result
+                    aiDetectionNotice.innerHTML = `
+                        <div class="bg-blue-50 rounded-md p-3 mt-2">
+                            <div class="flex">
+                                <div class="flex-shrink-0">
+                                    <svg class="h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+                                    </svg>
+                                </div>
+                                <div class="ml-3 flex-1">
+                                    <p class="text-sm text-blue-700">
+                                        Product detected in photo: <span id="detected-product" class="font-medium">${detectedProduct.name}</span>
+                                    </p>
+                                    <p class="text-xs text-blue-600 mt-1">Confidence: 80%</p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    
+                    // Auto-select the detected product
+                    selectProduct(detectedProduct);
+                    
+                    // Remove analyzing class from photo
+                    if (photoPreview) {
+                        photoPreview.classList.remove('analyzing');
+                    }
+                    
+                    // Highlight the selection
+                    productButton.classList.add('selected');
+                    productButton.style.animation = 'pulse 2s';
+                    setTimeout(() => productButton.style.animation = '', 2000);
+                }, 2000); // Simulate API delay
+            }
+
+            // Update rating behavior
+            const ratingStars = document.querySelectorAll('.rating-star');
+            let currentRating = 0;
+
+            ratingStars.forEach(star => {
+                star.addEventListener('click', () => {
+                    const rating = parseInt(star.dataset.rating);
+                    currentRating = rating;
+                    feedbackState.rating = rating; // Update the feedback state
+                    
+                    // Update all stars up to the clicked one
+                    ratingStars.forEach((s, index) => {
+                        if (index < rating) {
+                            s.classList.remove('text-gray-300');
+                            s.classList.add('text-yellow-400');
+                        } else {
+                            s.classList.remove('text-yellow-400');
+                            s.classList.add('text-gray-300');
+                        }
+                    });
+
+                    // If 5 stars are selected, select all
+                    if (rating === 5) {
+                        ratingStars.forEach(s => {
+                            s.classList.remove('text-gray-300');
+                            s.classList.add('text-yellow-400');
+                        });
+                    }
+                });
+
+                star.addEventListener('mouseover', () => {
+                    const rating = parseInt(star.dataset.rating);
+                    ratingStars.forEach((s, index) => {
+                        if (index < rating) {
+                            s.classList.add('text-yellow-400');
+                        }
+                    });
+                });
+
+                star.addEventListener('mouseout', () => {
+                    ratingStars.forEach((s, index) => {
+                        if (index >= currentRating) {
+                            s.classList.remove('text-yellow-400');
+                            s.classList.add('text-gray-300');
+                        }
+                    });
+                });
+            });
+
+            // Add photo remove functionality
+            const removePhotoBtn = document.getElementById('remove-photo');
+            
+            if (removePhotoBtn && photoPreview) {
+                removePhotoBtn.addEventListener('click', () => {
+                    photoPreview.style.display = 'none';
+                    removePhotoBtn.classList.add('hidden');
+                    feedbackState.photo = null;
+                });
+
+                // Show remove button when photo is displayed
+                photoPreview.addEventListener('load', () => {
+                    if (photoPreview.style.display !== 'none') {
+                        removePhotoBtn.classList.remove('hidden');
+                    }
+                });
+            }
+
+            // Add search functionality
+            const productSearch = document.getElementById('product-search');
+            if (productSearch) {
+                productSearch.addEventListener('input', (e) => {
+                    const searchQuery = e.target.value.toLowerCase();
+                    
+                    if (currentCategory) {
+                        // Search within current category
+                        const filteredProducts = currentCategory.items.filter(item => 
+                            item.name.toLowerCase().includes(searchQuery)
+                        );
+                        showProducts({ ...currentCategory, items: filteredProducts });
+                    } else {
+                        // Search across all categories
+                        const filteredCategories = productData.categories.map(category => ({
+                            ...category,
+                            items: category.items.filter(item => 
+                                item.name.toLowerCase().includes(searchQuery)
+                            )
+                        })).filter(category => category.items.length > 0);
+
+                        if (filteredCategories.length > 0) {
+                            productList.innerHTML = filteredCategories.map(category => `
+                                <div class="category-item" data-category-id="${category.id}">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-gray-900">${category.name}</span>
+                                        <span class="text-sm text-gray-500">${category.items.length} items</span>
+                                    </div>
+                                    <div class="mt-2 space-y-2">
+                                        ${category.items.map(item => `
+                                            <div class="product-item pl-4" data-product-id="${item.id}">
+                                                <img src="${item.image}" alt="${item.name}">
+                                                <span class="text-gray-900">${item.name}</span>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            `).join('');
+
+                            // Add click handlers for both categories and products
+                            document.querySelectorAll('.category-item').forEach(item => {
+                                item.addEventListener('click', (e) => {
+                                    // Only handle category clicks, not product clicks
+                                    if (!e.target.closest('.product-item')) {
+                                        const categoryId = item.dataset.categoryId;
+                                        currentCategory = productData.categories.find(c => c.id === categoryId);
+                                        showProducts(currentCategory);
+                                        updateBreadcrumb();
+                                    }
+                                });
+                            });
+
+                            document.querySelectorAll('.product-item').forEach(item => {
+                                item.addEventListener('click', () => {
+                                    const productId = item.dataset.productId;
+                                    const selectedProduct = productData.categories
+                                        .flatMap(c => c.items)
+                                        .find(p => p.id === productId);
+                                    selectProduct(selectedProduct);
+                                });
+                            });
+                        } else {
+                            productList.innerHTML = `
+                                <div class="p-4 text-center text-gray-500">
+                                    No products found matching "${searchQuery}"
+                                </div>
+                            `;
+                        }
+                    }
+                });
+            }
+        });
+    </script>
     <style>
         /* Add any custom styles here */
         .rating-star {
@@ -251,19 +1303,41 @@
             color: white;
         }
 
-        /* Add animation for pulse effect */
-        @keyframes pulse {
+        /* Style for photo analysis */
+        .photo-preview {
+            position: relative; /* Needed for the pseudo-element */
+            overflow: hidden;   /* Keep the scan within bounds */
+        }
+        .photo-preview.analyzing::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%; /* Start off-screen left */
+            width: 30%; /* Narrower beam for more focused effect */
+            height: 100%;
+            background: linear-gradient(
+                to right, 
+                rgba(59, 130, 246, 0) 0%, 
+                rgba(59, 130, 246, 0.3) 50%, 
+                rgba(59, 130, 246, 0) 100%
+            );
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.5); /* Add glow effect */
+            transform: skewX(-15deg); /* Less angle for more natural look */
+            animation: scan-light 3s ease-in-out infinite;
+            pointer-events: none; /* Ensure it doesn't interfere with interactions */
+        }
+        
+        @keyframes scan-light {
             0% {
-                transform: scale(1);
-                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+                left: -100%;
+                opacity: 0.8;
             }
-            70% {
-                transform: scale(1.05);
-                box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+            50% {
+                opacity: 1;
             }
             100% {
-                transform: scale(1);
-                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+                left: 150%; /* Move across and off-screen right */
+                opacity: 0.8;
             }
         }
     </style>
@@ -284,6 +1358,20 @@
 
         <!-- Feedback Form -->
         <div class="p-4 space-y-6">
+            <!-- Error Message -->
+            <div id="error-message" class="hidden bg-red-50 border-l-4 border-red-400 p-4 mb-4">
+                <div class="flex">
+                    <div class="flex-shrink-0">
+                        <svg class="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                        </svg>
+                    </div>
+                    <div class="ml-3">
+                        <p class="text-sm text-red-700"></p>
+                    </div>
+                </div>
+            </div>
+
             <form id="feedback-form" class="space-y-4">
                 <!-- Input Method Buttons -->
                 <div class="flex justify-between space-x-4">
@@ -313,14 +1401,14 @@
                     </button>
                 </div>
 
+                <!-- AI Detection Notice Placeholder -->
+                <div id="ai-detection-notice" class="mt-2"></div>
+
                 <!-- Text Input Section -->
                 <div class="space-y-4">
                     <textarea id="feedback-message" name="feedback-message" rows="3" placeholder="Type your feedback here..."
                         class="mt-1 block w-full rounded-md border-2 border-gray-300 shadow-sm focus:border-cyan-500 focus:ring-cyan-500 p-3"></textarea>
                 </div>
-
-                <!-- AI Detection Notice Placeholder -->
-                <div id="ai-detection-notice" class="mt-2"></div>
 
                 <!-- Product Selector -->
                 <div class="product-selector">
@@ -364,26 +1452,12 @@
                     </div>
                 </div>
 
-                <!-- Feedback Labels -->
+                <!-- Critical to Patient Safety Checkbox -->
                 <div class="space-y-2">
-                    <label class="block text-sm font-medium text-gray-700">Feedback Type</label>
-                    <div class="flex flex-wrap gap-2">
-                        <button type="button" class="feedback-label px-3 py-1 rounded-full text-sm border border-gray-300 hover:bg-yellow-100 hover:border-yellow-500 hover:text-yellow-700" data-label="Suggestion" data-color="yellow">
-                            Suggestion
-                        </button>
-                        <button type="button" class="feedback-label px-3 py-1 rounded-full text-sm border border-gray-300 hover:bg-orange-100 hover:border-orange-500 hover:text-orange-700" data-label="Complaint" data-color="orange">
-                            Complaint
-                        </button>
-                        <button type="button" class="feedback-label px-3 py-1 rounded-full text-sm border border-gray-300 hover:bg-green-100 hover:border-green-500 hover:text-green-700" data-label="Praise" data-color="green">
-                            Praise
-                        </button>
-                        <button type="button" class="feedback-label px-3 py-1 rounded-full text-sm border border-gray-300 hover:bg-blue-100 hover:border-blue-500 hover:text-blue-700" data-label="Question" data-color="blue">
-                            Question
-                        </button>
-                        <button type="button" class="feedback-label px-3 py-1 rounded-full text-sm border border-gray-300 hover:bg-purple-100 hover:border-purple-500 hover:text-purple-700" data-label="Safety" data-color="purple">
-                            Critical to Patient Safety
-                        </button>
-                    </div>
+                    <label class="flex items-center space-x-2">
+                        <input type="checkbox" id="critical-safety" name="critical-safety" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                        <span class="text-sm font-medium text-gray-700">Critical to Patient Safety</span>
+                    </label>
                 </div>
 
                 <!-- Submit Button -->
@@ -397,6 +1471,18 @@
     <!-- Product Dropdown -->
     <div id="product-overlay" class="product-overlay"></div>
     <div id="product-dropdown" class="product-dropdown">
+        <!-- Add search input -->
+        <div class="px-4 py-3 border-b border-gray-200">
+            <div class="relative">
+                <input type="text" id="product-search" placeholder="Search products..." 
+                    class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                <div class="absolute inset-y-0 right-0 flex items-center pr-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
+                    </svg>
+                </div>
+            </div>
+        </div>
         <div id="product-breadcrumb" class="breadcrumb">
             <span class="breadcrumb-item active">Categories</span>
         </div>
@@ -453,731 +1539,5 @@
             </button>
         </div>
     </div>
-
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Get the feedback text from URL parameters
-            const urlParams = new URLSearchParams(window.location.search);
-            const feedbackText = urlParams.get('feedback');
-            const photoData = urlParams.get('photo');
-            const photoSource = urlParams.get('photoSource');
-            
-            // If there's feedback text in the URL, populate the textarea
-            if (feedbackText) {
-                const feedbackTextarea = document.getElementById('feedback-message');
-                if (feedbackTextarea) {
-                    feedbackTextarea.value = feedbackText;
-                    // Trigger AI analysis if it exists
-                    if (typeof triggerAIAnalysis === 'function') {
-                        triggerAIAnalysis();
-                    }
-                }
-            }
-            
-            let photoDataToUse = photoData;
-            
-            // If photo is in localStorage, retrieve it
-            if (photoSource === 'localStorage') {
-                photoDataToUse = localStorage.getItem('tempCapturedPhoto');
-                // Clear from localStorage after retrieving to free up space
-                localStorage.removeItem('tempCapturedPhoto');
-            }
-            
-            // If there's photo data, show it in the preview
-            if (photoDataToUse) {
-                const photoPreview = document.getElementById('photo-preview');
-                const removePhotoBtn = document.getElementById('remove-photo');
-                
-                if (photoPreview) {
-                    photoPreview.src = photoDataToUse;
-                    photoPreview.style.display = 'block';
-                    
-                    // Show the remove button
-                    if (removePhotoBtn) {
-                        removePhotoBtn.classList.remove('hidden');
-                    }
-                    
-                    // Store the photo in the feedback state
-                    feedbackState.photo = photoDataToUse;
-                    
-                    // Simulate AI product detection
-                    detectProductInPhoto(photoDataToUse);
-                }
-            }
-            
-            // Product categories and items data
-            const productData = {
-                categories: [
-                    {
-                        id: 'protective',
-                        name: 'Protective Equipment',
-                        items: [
-                            { id: 'gloves-m', name: 'Gloves - Size M', image: 'https://www.gloves.com/cdn/shop/articles/maskmedicare-shop-zCsup0tF-q4-unsplash.jpg?v=1673613431' },
-                            { id: 'gloves-l', name: 'Gloves - Size L', image: 'https://www.gloves.com/cdn/shop/articles/maskmedicare-shop-zCsup0tF-q4-unsplash.jpg?v=1673613431' },
-                            { id: 'masks', name: 'Masks - Type IIR', image: 'https://hdbrows.com/shop/pro/media/catalog/product/cache/83883c3d58d0958e9d4c7e2cf62df9ac/t/y/type-iir-mask.jpg' }
-                        ]
-                    },
-                    {
-                        id: 'surgical',
-                        name: 'Surgical Instruments',
-                        items: [
-                            { id: 'scissors', name: 'Surgical Scissors', image: 'https://cdn.webshopapp.com/shops/308248/files/472938159/325x325x2/medipharchem-surgical-scissors-st-st-curved.jpg' },
-                            { id: 'forceps', name: 'Forceps', image: 'https://cdn.webshopapp.com/shops/308248/files/472938159/325x325x2/medipharchem-surgical-scissors-st-st-curved.jpg' }
-                        ]
-                    },
-                    {
-                        id: 'monitoring',
-                        name: 'Monitoring Equipment',
-                        items: [
-                            { id: 'bp-monitor', name: 'Blood Pressure Monitor', image: 'https://cdn.webshopapp.com/shops/308248/files/472938159/325x325x2/medipharchem-surgical-scissors-st-st-curved.jpg' },
-                            { id: 'thermometer', name: 'Digital Thermometer', image: 'https://cdn.webshopapp.com/shops/308248/files/472938159/325x325x2/medipharchem-surgical-scissors-st-st-curved.jpg' }
-                        ]
-                    }
-                ]
-            };
-
-            // State
-            let feedbackState = {
-                message: '',
-                photo: null,
-                rating: 0,
-                label: null,
-                selectedProduct: null
-            };
-
-            let currentCategory = null;
-
-            // Product selector elements
-            const productButton = document.getElementById('product-selector-button');
-            const productDropdown = document.getElementById('product-dropdown');
-            const productOverlay = document.getElementById('product-overlay');
-            const productList = document.getElementById('product-list');
-            const breadcrumb = document.getElementById('product-breadcrumb');
-
-            // Show product selector
-            productButton.addEventListener('click', () => {
-                productDropdown.classList.add('active');
-                productOverlay.classList.add('active');
-                if (!currentCategory) {
-                    showCategories();
-                }
-            });
-
-            // Hide product selector
-            productOverlay.addEventListener('click', () => {
-                productDropdown.classList.remove('active');
-                productOverlay.classList.remove('active');
-                currentCategory = null;
-                updateBreadcrumb();
-            });
-
-            // Function to show categories
-            function showCategories() {
-                productList.innerHTML = productData.categories.map(category => `
-                    <div class="category-item" data-category-id="${category.id}">
-                        <div class="flex justify-between items-center">
-                            <span class="text-gray-900">${category.name}</span>
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
-                                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
-                            </svg>
-                        </div>
-                    </div>
-                `).join('');
-
-                // Show suggestions if there's feedback text
-                const feedbackText = document.getElementById('feedback-message').value;
-                if (feedbackText) {
-                    showSuggestions(feedbackText);
-                } else {
-                    document.getElementById('suggestions-section').style.display = 'none';
-                }
-
-                // Add click handlers for categories
-                document.querySelectorAll('.category-item').forEach(item => {
-                    item.addEventListener('click', () => {
-                        const categoryId = item.dataset.categoryId;
-                        currentCategory = productData.categories.find(c => c.id === categoryId);
-                        showProducts(currentCategory);
-                        updateBreadcrumb();
-                    });
-                });
-            }
-
-            // Function to show suggestions
-            function showSuggestions(feedbackText) {
-                const suggestionsSection = document.getElementById('suggestions-section');
-                const suggestionsList = document.getElementById('suggestions-list');
-                
-                // Show the section
-                suggestionsSection.style.display = 'block';
-                
-                // Get all products
-                const allProducts = productData.categories.flatMap(c => c.items);
-                
-                // Simulate AI suggestions based on feedback text
-                // In a real app, this would use actual AI/ML to suggest products
-                const suggestedProducts = allProducts.slice(0, 3); // Just take first 3 as example
-                
-                suggestionsList.innerHTML = suggestedProducts.map(product => `
-                    <div class="product-item" data-product-id="${product.id}">
-                        <img src="${product.image}" alt="${product.name}">
-                        <span class="text-gray-900">${product.name}</span>
-                    </div>
-                `).join('');
-                
-                // Add click handlers for suggested products
-                document.querySelectorAll('#suggestions-list .product-item').forEach(item => {
-                    item.addEventListener('click', () => {
-                        const productId = item.dataset.productId;
-                        const selectedProduct = allProducts.find(p => p.id === productId);
-                        selectProduct(selectedProduct);
-                    });
-                });
-            }
-
-            // Update feedback message listener to refresh suggestions
-            const feedbackMessage = document.getElementById('feedback-message');
-            if (feedbackMessage) {
-                feedbackMessage.addEventListener('input', () => {
-                    if (productDropdown.classList.contains('active')) {
-                        showSuggestions(feedbackMessage.value);
-                    }
-                });
-            }
-
-            function showProducts(category) {
-                productList.innerHTML = category.items.map(item => `
-                    <div class="product-item" data-product-id="${item.id}">
-                        <img src="${item.image}" alt="${item.name}">
-                        <span class="text-gray-900">${item.name}</span>
-                    </div>
-                `).join('');
-
-                // Add click handlers for products
-                document.querySelectorAll('.product-item').forEach(item => {
-                    item.addEventListener('click', () => {
-                        const productId = item.dataset.productId;
-                        const selectedProduct = category.items.find(p => p.id === productId);
-                        selectProduct(selectedProduct);
-                    });
-                });
-            }
-
-            function updateBreadcrumb() {
-                if (currentCategory) {
-                    breadcrumb.innerHTML = `
-                        <span class="breadcrumb-item" id="category-back">Categories</span>
-                        <span class="breadcrumb-separator">/</span>
-                        <span class="breadcrumb-item active">${currentCategory.name}</span>
-                    `;
-                    document.getElementById('category-back').addEventListener('click', () => {
-                        currentCategory = null;
-                        showCategories();
-                        updateBreadcrumb();
-                    });
-                } else {
-                    breadcrumb.innerHTML = '<span class="breadcrumb-item active">Categories</span>';
-                }
-            }
-
-            function selectProduct(product) {
-                feedbackState.selectedProduct = product;
-                document.getElementById('selected-product-text').textContent = product.name;
-                productButton.classList.add('selected');
-                productDropdown.classList.remove('active');
-                productOverlay.classList.remove('active');
-                currentCategory = null;
-                updateBreadcrumb();
-            }
-
-            // Initialize categories view
-            showCategories();
-
-            let stream = null;
-
-            // Camera elements
-            const cameraContainer = document.getElementById('camera-container');
-            const cameraPreview = document.getElementById('camera-preview');
-            const photoPreview = document.getElementById('photo-preview');
-            const captureButton = document.getElementById('capture-photo');
-            const cancelButton = document.getElementById('cancel-photo');
-
-            // Camera button
-            const cameraButton = document.getElementById('camera-feedback');
-            if (cameraButton) {
-                cameraButton.addEventListener('click', async () => {
-                    try {
-                        stream = await navigator.mediaDevices.getUserMedia({ 
-                            video: { 
-                                facingMode: 'environment',
-                                width: { ideal: 1920 },
-                                height: { ideal: 1080 }
-                            } 
-                        });
-                        cameraPreview.srcObject = stream;
-                        cameraContainer.style.display = 'block';
-                    } catch (error) {
-                        console.error('Error accessing camera:', error);
-                        alert('Failed to access camera. Please ensure camera permissions are granted.');
-                    }
-                });
-            }
-
-            // Capture photo
-            if (captureButton) {
-                captureButton.addEventListener('click', () => {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = cameraPreview.videoWidth;
-                    canvas.height = cameraPreview.videoHeight;
-                    canvas.getContext('2d').drawImage(cameraPreview, 0, 0);
-                    
-                    // Store photo in state and show preview
-                    feedbackState.photo = canvas.toDataURL('image/jpeg');
-                    photoPreview.src = feedbackState.photo;
-                    photoPreview.style.display = 'block';
-                    
-                    // Clean up camera
-                    stopCamera();
-
-                    // Simulate AI product detection
-                    detectProductInPhoto(feedbackState.photo);
-                });
-            }
-
-            // Cancel photo
-            if (cancelButton) {
-                cancelButton.addEventListener('click', stopCamera);
-            }
-
-            function stopCamera() {
-                if (stream) {
-                    stream.getTracks().forEach(track => track.stop());
-                    stream = null;
-                }
-                cameraContainer.style.display = 'none';
-            }
-
-            // Dictation elements
-            const dictationContainer = document.getElementById('dictation-container');
-            const dictationPulse = document.getElementById('dictation-pulse');
-            const dictationText = document.getElementById('dictation-text');
-            const startDictationBtn = document.getElementById('start-dictation');
-            const stopDictationBtn = document.getElementById('stop-dictation');
-            const cancelDictationBtn = document.getElementById('cancel-dictation');
-            
-            let recognition = null;
-            let isListening = false;
-            
-            // Initialize speech recognition
-            function initializeSpeechRecognition() {
-                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                if (!SpeechRecognition) {
-                    alert('Speech recognition is not supported in your browser.');
-                    return null;
-                }
-                
-                const recognition = new SpeechRecognition();
-                recognition.continuous = true;
-                recognition.interimResults = true;
-                recognition.lang = 'en-US';
-                
-                // Set up recognition handlers
-                setupRecognitionHandlers(recognition);
-                
-                return recognition;
-            }
-            
-            // Dictation button
-            const dictateButton = document.getElementById('dictate-feedback');
-            if (dictateButton) {
-                dictateButton.addEventListener('click', () => {
-                    dictationContainer.style.display = 'flex';
-                    dictationText.textContent = 'Tap Start to begin speaking...';
-                    startDictationBtn.style.display = 'flex';
-                    stopDictationBtn.style.display = 'none';
-                    dictationPulse.classList.remove('listening');
-                    
-                    // Initialize recognition if not already done
-                    if (!recognition) {
-                        recognition = initializeSpeechRecognition();
-                    }
-                });
-            }
-            
-            // Start dictation
-            if (startDictationBtn) {
-                startDictationBtn.addEventListener('click', () => {
-                    if (!recognition) {
-                        recognition = initializeSpeechRecognition();
-                        if (!recognition) return;
-                    }
-                    
-                    recognition.start();
-                    isListening = true;
-                    dictationPulse.classList.add('listening');
-                    startDictationBtn.style.display = 'none';
-                    stopDictationBtn.style.display = 'flex';
-                    dictationText.textContent = 'Listening...';
-                });
-            }
-            
-            // Stop dictation
-            if (stopDictationBtn) {
-                stopDictationBtn.addEventListener('click', () => {
-                    if (recognition && isListening) {
-                        recognition.stop();
-                        isListening = false;
-                        dictationPulse.classList.remove('listening');
-                        
-                        // Show analyzing card
-                        const aiDetectionNotice = document.getElementById('ai-detection-notice');
-                        aiDetectionNotice.classList.remove('hidden');
-                        aiDetectionNotice.innerHTML = `
-                            <div class="bg-blue-50 rounded-md p-3 mt-2">
-                                <div class="flex items-center">
-                                    <div class="flex-shrink-0">
-                                        <svg class="animate-spin h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                        </svg>
-                                    </div>
-                                    <div class="ml-3">
-                                        <p class="text-sm text-blue-700">Analyzing feedback...</p>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
-
-                        // Simulate analysis delay
-                        setTimeout(() => {
-                            dictationContainer.style.display = 'none';
-                            triggerAIAnalysis();
-                        }, 2000);
-                    }
-                });
-            }
-            
-            // Cancel dictation
-            if (cancelDictationBtn) {
-                cancelDictationBtn.addEventListener('click', () => {
-                    if (recognition && isListening) {
-                        recognition.abort();
-                        isListening = false;
-                    }
-                    
-                    // Show analyzing card
-                    const aiDetectionNotice = document.getElementById('ai-detection-notice');
-                    aiDetectionNotice.classList.remove('hidden');
-                    aiDetectionNotice.innerHTML = `
-                        <div class="bg-blue-50 rounded-md p-3 mt-2">
-                            <div class="flex items-center">
-                                <div class="flex-shrink-0">
-                                    <svg class="animate-spin h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                </div>
-                                <div class="ml-3">
-                                    <p class="text-sm text-blue-700">Analyzing feedback...</p>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-
-                    // Simulate analysis delay
-                    setTimeout(() => {
-                        dictationContainer.style.display = 'none';
-                        triggerAIAnalysis();
-                    }, 2000);
-                });
-            }
-            
-            // Function to trigger AI analysis
-            function triggerAIAnalysis() {
-                const dictatedText = document.getElementById('feedback-message').value;
-                if (dictatedText) {
-                    // Show AI analysis notice
-                    const aiDetectionNotice = document.getElementById('ai-detection-notice');
-                    aiDetectionNotice.innerHTML = `
-                        <div class="bg-blue-50 rounded-md p-3 mt-2">
-                            <div class="flex">
-                                <div class="flex-shrink-0">
-                                    <svg class="h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
-                                    </svg>
-                                </div>
-                                <div class="ml-3 flex-1">
-                                    <p class="text-sm text-blue-700">
-                                        AI Analysis Complete: Based on your feedback, we've pre-selected relevant product and rating.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-
-                    // Auto-select a product (using the first product from the first category as an example)
-                    const firstProduct = productData.categories[0].items[0];
-                    selectProduct(firstProduct);
-
-                    // Set rating to 3 stars
-                    const ratingStars = document.querySelectorAll('.rating-star');
-                    ratingStars.forEach((star, index) => {
-                        if (index < 3) {
-                            star.classList.remove('text-gray-300');
-                            star.classList.add('text-yellow-400');
-                        } else {
-                            star.classList.remove('text-yellow-400');
-                            star.classList.add('text-gray-300');
-                        }
-                    });
-                    currentRating = 3;
-
-                    // Add some animation to the selected product
-                    const productButton = document.getElementById('product-selector-button');
-                    productButton.style.animation = 'pulse 2s';
-                    setTimeout(() => productButton.style.animation = '', 2000);
-                }
-            }
-            
-            // Handle speech recognition events
-            function setupRecognitionHandlers(recognition) {
-                recognition.onresult = (event) => {
-                    let finalTranscript = '';
-                    let interimTranscript = '';
-                    
-                    for (let i = event.resultIndex; i < event.results.length; i++) {
-                        const transcript = event.results[i][0].transcript;
-                        if (event.results[i].isFinal) {
-                            finalTranscript += transcript;
-                        } else {
-                            interimTranscript += transcript;
-                        }
-                    }
-                    
-                    if (finalTranscript) {
-                        const feedbackTextarea = document.getElementById('feedback-message');
-                        const currentText = feedbackTextarea.value;
-                        feedbackTextarea.value = currentText + (currentText ? ' ' : '') + finalTranscript;
-                    }
-                    
-                    dictationText.textContent = interimTranscript || 'Listening...';
-                };
-                
-                recognition.onerror = (event) => {
-                    if (event.error === 'no-speech') {
-                        dictationText.textContent = 'No speech detected. Try again.';
-                    } else {
-                        console.error('Speech recognition error:', event.error);
-                        dictationText.textContent = 'Error occurred. Please try again.';
-                    }
-                    dictationPulse.classList.remove('listening');
-                    startDictationBtn.style.display = 'flex';
-                    stopDictationBtn.style.display = 'none';
-                };
-                
-                recognition.onend = () => {
-                    isListening = false;
-                    dictationPulse.classList.remove('listening');
-                    if (dictationContainer.style.display === 'flex') {
-                        startDictationBtn.style.display = 'flex';
-                        stopDictationBtn.style.display = 'none';
-                        dictationText.textContent = 'Tap Start to begin speaking...';
-                    }
-                };
-            }
-
-            // Add feedback label selection
-            const feedbackLabels = document.querySelectorAll('.feedback-label');
-            feedbackLabels.forEach(label => {
-                label.addEventListener('click', () => {
-                    const labelText = label.dataset.label;
-                    const labelColor = label.dataset.color;
-                    
-                    // Remove all active states
-                    feedbackLabels.forEach(l => {
-                        l.classList.remove(
-                            'bg-red-100', 'border-red-500', 'text-red-700',
-                            'bg-yellow-100', 'border-yellow-500', 'text-yellow-700',
-                            'bg-orange-100', 'border-orange-500', 'text-orange-700',
-                            'bg-green-100', 'border-green-500', 'text-green-700',
-                            'bg-blue-100', 'border-blue-500', 'text-blue-700',
-                            'bg-purple-100', 'border-purple-500', 'text-purple-700'
-                        );
-                    });
-                    
-                    // Add active state to clicked label
-                    label.classList.add(
-                        `bg-${labelColor}-100`,
-                        `border-${labelColor}-500`,
-                        `text-${labelColor}-700`
-                    );
-                    
-                    // Update state
-                    feedbackState.label = labelText;
-                });
-            });
-
-            // Submit button
-            const submitButton = document.getElementById('submit-feedback');
-            if (submitButton) {
-                submitButton.addEventListener('click', () => {
-                    const message = document.getElementById('feedback-message').value;
-
-                    if (!message) {
-                        alert('Please enter your feedback message');
-                        return;
-                    }
-
-                    if (!feedbackState.selectedProduct) {
-                        alert('Please select a product');
-                        return;
-                    }
-
-                    if (!feedbackState.label) {
-                        alert('Please select a feedback type');
-                        return;
-                    }
-
-                    const feedback = {
-                        ...feedbackState,
-                        message,
-                        timestamp: new Date().toISOString()
-                    };
-
-                    // Save to localStorage
-                    let feedbacks = JSON.parse(localStorage.getItem('productFeedbacks') || '[]');
-                    feedbacks.push(feedback);
-                    localStorage.setItem('productFeedbacks', JSON.stringify(feedbacks));
-
-                    alert('Feedback submitted successfully!');
-                    window.location.href = 'index.html';
-                });
-            }
-
-            // AI product detection
-            function detectProductInPhoto(photoData) {
-                // Show loading state
-                const aiDetectionNotice = document.getElementById('ai-detection-notice');
-                aiDetectionNotice.classList.remove('hidden');
-                aiDetectionNotice.innerHTML = `
-                    <div class="bg-blue-50 rounded-md p-3 mt-2">
-                        <div class="flex items-center">
-                            <div class="flex-shrink-0">
-                                <svg class="animate-spin h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                            </div>
-                            <div class="ml-3">
-                                <p class="text-sm text-blue-700">Analyzing photo for product detection...</p>
-                            </div>
-                        </div>
-                    </div>
-                `;
-
-                // Simulate API delay
-                setTimeout(() => {
-                    // Get all products
-                    const allProducts = productData.categories.flatMap(c => c.items);
-                    
-                    // Simulate AI detection with 80% confidence
-                    const detectedProduct = allProducts[Math.floor(Math.random() * allProducts.length)];
-                    
-                    // Update UI with detection result
-                    aiDetectionNotice.innerHTML = `
-                        <div class="bg-blue-50 rounded-md p-3 mt-2">
-                            <div class="flex">
-                                <div class="flex-shrink-0">
-                                    <svg class="h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
-                                    </svg>
-                                </div>
-                                <div class="ml-3 flex-1">
-                                    <p class="text-sm text-blue-700">
-                                        Product detected in photo: <span id="detected-product" class="font-medium">${detectedProduct.name}</span>
-                                    </p>
-                                    <p class="text-xs text-blue-600 mt-1">Confidence: 80%</p>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                    
-                    // Auto-select the detected product
-                    selectProduct(detectedProduct);
-                    
-                    // Highlight the selection
-                    productButton.classList.add('selected');
-                    productButton.style.animation = 'pulse 2s';
-                    setTimeout(() => productButton.style.animation = '', 2000);
-                }, 2000); // Simulate API delay
-            }
-
-            // Update rating behavior
-            const ratingStars = document.querySelectorAll('.rating-star');
-            let currentRating = 0;
-
-            ratingStars.forEach(star => {
-                star.addEventListener('click', () => {
-                    const rating = parseInt(star.dataset.rating);
-                    currentRating = rating;
-                    
-                    // Update all stars up to the clicked one
-                    ratingStars.forEach((s, index) => {
-                        if (index < rating) {
-                            s.classList.remove('text-gray-300');
-                            s.classList.add('text-yellow-400');
-                        } else {
-                            s.classList.remove('text-yellow-400');
-                            s.classList.add('text-gray-300');
-                        }
-                    });
-
-                    // If 5 stars are selected, select all
-                    if (rating === 5) {
-                        ratingStars.forEach(s => {
-                            s.classList.remove('text-gray-300');
-                            s.classList.add('text-yellow-400');
-                        });
-                    }
-                });
-
-                star.addEventListener('mouseover', () => {
-                    const rating = parseInt(star.dataset.rating);
-                    ratingStars.forEach((s, index) => {
-                        if (index < rating) {
-                            s.classList.add('text-yellow-400');
-                        }
-                    });
-                });
-
-                star.addEventListener('mouseout', () => {
-                    ratingStars.forEach((s, index) => {
-                        if (index >= currentRating) {
-                            s.classList.remove('text-yellow-400');
-                            s.classList.add('text-gray-300');
-                        }
-                    });
-                });
-            });
-
-            // Add photo remove functionality
-            const removePhotoBtn = document.getElementById('remove-photo');
-            
-            if (removePhotoBtn && photoPreview) {
-                removePhotoBtn.addEventListener('click', () => {
-                    photoPreview.style.display = 'none';
-                    removePhotoBtn.classList.add('hidden');
-                    feedbackState.photo = null;
-                });
-
-                // Show remove button when photo is displayed
-                photoPreview.addEventListener('load', () => {
-                    if (photoPreview.style.display !== 'none') {
-                        removePhotoBtn.classList.remove('hidden');
-                    }
-                });
-            }
-        });
-    </script>
 </body>
 </html> 
