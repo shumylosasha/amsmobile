@@ -585,6 +585,16 @@
         }
 
         document.addEventListener('DOMContentLoaded', async () => {
+            // Initialize feedback state first
+            let feedbackState = {
+                message: '',
+                photo: null,
+                rating: 0,
+                isCritical: false,
+                selectedProduct: null,
+                method: 'text' // Default method
+            };
+
             // Sign in the user when the page loads
             await signInUser();
             
@@ -599,10 +609,7 @@
                 const feedbackTextarea = document.getElementById('feedback-message');
                 if (feedbackTextarea) {
                     feedbackTextarea.value = feedbackText;
-                    // Trigger AI analysis if it exists
-                    if (typeof triggerAIAnalysis === 'function') {
-                        triggerAIAnalysis();
-                    }
+                    feedbackState.message = feedbackText;
                 }
             }
             
@@ -615,7 +622,7 @@
                 localStorage.removeItem('capturedImage');
             }
             
-            // If there's photo data, show it in the preview
+            // If there's photo data, show it in the preview and analyze it
             if (photoDataToUse) {
                 const photoPreview = document.getElementById('photo-preview');
                 const removePhotoBtn = document.getElementById('remove-photo');
@@ -631,21 +638,23 @@
                     
                     // Store the photo in the feedback state
                     feedbackState.photo = photoDataToUse;
+                    feedbackState.method = 'photo';
                     
-                    // Simulate AI product detection
-                    detectProductInPhoto(photoDataToUse);
+                    // Add analyzing class to trigger animation
+                    photoPreview.classList.add('analyzing');
+                    
+                    // Start product detection immediately
+                    try {
+                        console.log('Starting product detection for photo');
+                        await detectProductInPhoto(photoDataToUse);
+                    } catch (error) {
+                        console.error('Error during product detection:', error);
+                    } finally {
+                        // Remove analyzing class after detection (whether it succeeded or failed)
+                        photoPreview.classList.remove('analyzing');
+                    }
                 }
             }
-            
-            // State
-            let feedbackState = {
-                message: '',
-                photo: null,
-                rating: 0,
-                isCritical: false,
-                selectedProduct: null,
-                method: 'text' // Default method
-            };
 
             let currentCategory = null;
 
