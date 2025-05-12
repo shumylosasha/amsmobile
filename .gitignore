@@ -33,3 +33,6 @@ yarn-error.log*
 *.swp
 *.swo 
 .vercel
+
+# Config files with sensitive data
+config.js

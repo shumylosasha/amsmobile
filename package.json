@@ -10,6 +10,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.39.3",
     "@vercel/node": "2.15.10",
+    "dotenv": "^16.5.0",
     "serve": "^14.2.1"
   },
   "resolutions": {
