@@ -601,15 +601,16 @@
             // Get the feedback text from URL parameters
             const urlParams = new URLSearchParams(window.location.search);
             const feedbackText = urlParams.get('feedback');
+            const dictatedText = urlParams.get('dictatedText');
             const photoData = urlParams.get('photo');
             const photoSource = urlParams.get('photoSource');
             
             // If there's feedback text in the URL, populate the textarea
-            if (feedbackText) {
+            if (feedbackText || dictatedText) {
                 const feedbackTextarea = document.getElementById('feedback-message');
                 if (feedbackTextarea) {
-                    feedbackTextarea.value = feedbackText;
-                    feedbackState.message = feedbackText;
+                    feedbackTextarea.value = feedbackText || dictatedText;
+                    feedbackState.message = feedbackText || dictatedText;
                 }
             }
             
@@ -922,6 +923,7 @@
                     dictationText.textContent = 'Tap Start to begin speaking...';
                     startDictationBtn.style.display = 'flex';
                     stopDictationBtn.style.display = 'none';
+                    cancelDictationBtn.style.display = 'flex'; // Show cancel button initially
                     dictationPulse.classList.remove('listening');
                     feedbackState.method = 'voice'; // Set method to voice when dictation is used
                     
@@ -944,6 +946,7 @@
                     isListening = true;
                     dictationPulse.classList.add('listening');
                     startDictationBtn.style.display = 'none';
+                    cancelDictationBtn.style.display = 'none'; // Hide cancel button when speaking starts
                     stopDictationBtn.style.display = 'flex';
                     dictationText.textContent = 'Listening...';
                 });
@@ -1069,6 +1072,8 @@
             
             // Handle speech recognition events
             function setupRecognitionHandlers(recognition) {
+                let accumulatedText = ''; // Keep track of all transcribed text
+                
                 recognition.onresult = (event) => {
                     let finalTranscript = '';
                     let interimTranscript = '';
@@ -1083,12 +1088,16 @@
                     }
                     
                     if (finalTranscript) {
+                        // Add final transcript to accumulated text
+                        accumulatedText += (accumulatedText ? ' ' : '') + finalTranscript;
+                        
+                        // Update the feedback textarea
                         const feedbackTextarea = document.getElementById('feedback-message');
-                        const currentText = feedbackTextarea.value;
-                        feedbackTextarea.value = currentText + (currentText ? ' ' : '') + finalTranscript;
+                        feedbackTextarea.value = accumulatedText;
                     }
                     
-                    dictationText.textContent = interimTranscript || 'Listening...';
+                    // Show both accumulated text and current interim text in dictation display
+                    dictationText.textContent = accumulatedText + (interimTranscript ? ' ' + interimTranscript : '');
                 };
                 
                 recognition.onerror = (event) => {
@@ -1100,6 +1109,7 @@
                     }
                     dictationPulse.classList.remove('listening');
                     startDictationBtn.style.display = 'flex';
+                    cancelDictationBtn.style.display = 'flex'; // Show cancel button on error
                     stopDictationBtn.style.display = 'none';
                 };
                 
@@ -1108,8 +1118,13 @@
                     dictationPulse.classList.remove('listening');
                     if (dictationContainer.style.display === 'flex') {
                         startDictationBtn.style.display = 'flex';
+                        cancelDictationBtn.style.display = 'flex'; // Show cancel button when ended
                         stopDictationBtn.style.display = 'none';
-                        dictationText.textContent = 'Tap Start to begin speaking...';
+                        if (accumulatedText) {
+                            dictationText.textContent = accumulatedText;
+                        } else {
+                            dictationText.textContent = 'Tap Start to begin speaking...';
+                        }
                     }
                 };
             }

@@ -37,6 +37,87 @@
             background-color: #EFF6FF;
         }
         
+        .product-dropdown {
+            display: none;
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: white;
+            border-radius: 16px 16px 0 0;
+            box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.1);
+            z-index: 40;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .product-dropdown.active {
+            display: block;
+        }
+        
+        .product-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 30;
+        }
+        
+        .product-overlay.active {
+            display: block;
+        }
+        
+        .category-item {
+            padding: 16px;
+            border-bottom: 1px solid #E5E7EB;
+            cursor: pointer;
+        }
+        
+        .product-item {
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .product-item:hover {
+            background-color: #F3F4F6;
+        }
+        
+        .product-item img {
+            width: 48px;
+            height: 48px;
+            border-radius: 8px;
+            object-fit: cover;
+        }
+        
+        .breadcrumb {
+            padding: 16px;
+            border-bottom: 1px solid #E5E7EB;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .breadcrumb-separator {
+            color: #9CA3AF;
+        }
+        
+        .breadcrumb-item {
+            color: #6B7280;
+            cursor: pointer;
+        }
+        
+        .breadcrumb-item.active {
+            color: #111827;
+            font-weight: 500;
+        }
+        
         /* Camera styles */
         .camera-container {
             display: none;
@@ -169,6 +250,44 @@
             background: #EF4444;
             color: white;
         }
+
+        /* Style for photo analysis */
+        .photo-preview {
+            position: relative;
+            overflow: hidden;
+        }
+        .photo-preview.analyzing::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 30%;
+            height: 100%;
+            background: linear-gradient(
+                to right, 
+                rgba(59, 130, 246, 0) 0%, 
+                rgba(59, 130, 246, 0.3) 50%, 
+                rgba(59, 130, 246, 0) 100%
+            );
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+            transform: skewX(-15deg);
+            animation: scan-light 3s ease-in-out infinite;
+            pointer-events: none;
+        }
+        
+        @keyframes scan-light {
+            0% {
+                left: -100%;
+                opacity: 0.8;
+            }
+            50% {
+                opacity: 1;
+            }
+            100% {
+                left: 150%;
+                opacity: 0.8;
+            }
+        }
     </style>
 </head>
 <body class="bg-[#DFEBF0] min-h-screen">
@@ -215,6 +334,9 @@
                         </svg>
                     </button>
                 </div>
+
+                <!-- AI Detection Notice Placeholder -->
+                <div id="ai-detection-notice" class="mt-2"></div>
 
                 <!-- Product Selector -->
                 <div class="product-selector">
@@ -276,6 +398,8 @@
         </div>
     </div>
 
+    <script src="request-product.js" type="module"></script>
+
     <!-- Camera Container -->
     <div id="camera-container" class="camera-container">
         <video id="camera-preview" class="camera-preview" autoplay playsinline></video>
@@ -302,7 +426,7 @@
             </button>
             <button id="stop-dictation" class="dictation-button stop">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clip-rule="evenodd" />
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 002 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
                 </svg>
                 Stop
             </button>
@@ -315,6 +439,37 @@
         </div>
     </div>
 
-    <script src="request-product.js"></script>
+    <!-- Product Dropdown -->
+    <div id="product-overlay" class="product-overlay"></div>
+    <div id="product-dropdown" class="product-dropdown">
+        <!-- Add search input -->
+        <div class="px-4 py-3 border-b border-gray-200">
+            <div class="relative">
+                <input type="text" id="product-search" placeholder="Search products..." 
+                    class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                <div class="absolute inset-y-0 right-0 flex items-center pr-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+        <div id="product-breadcrumb" class="breadcrumb">
+            <span class="breadcrumb-item active">Categories</span>
+        </div>
+        
+        <!-- Suggestions Section -->
+        <div id="suggestions-section" class="border-b border-gray-200">
+            <div class="px-4 py-3 bg-gray-50">
+                <h3 class="text-sm font-medium text-gray-900">Suggested Products</h3>
+                <p class="text-xs text-gray-500 mt-1">Based on your request</p>
+            </div>
+            <div id="suggestions-list" class="divide-y divide-gray-200">
+                <!-- Suggestions will be populated here -->
+            </div>
+        </div>
+        
+        <div id="product-list"></div>
+    </div>
 </body>
 </html> 

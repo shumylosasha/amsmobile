@@ -1007,27 +1007,49 @@ document.addEventListener('DOMContentLoaded', async () => {
             e.preventDefault(); // Prevent default link navigation
             const transcript = e.currentTarget.dataset.transcript || '';
             console.log('Create Feedback action clicked with transcript:', transcript);
+            
+            // Stop recognition if it's active
+            if (recognition) {
+                try {
+                    recognition.stop();
+                } catch(e) {
+                    console.error("Recognition stop failed: ", e);
+                }
+            }
+            
+            // Hide dictation overlay and ensure recognition is stopped
+            hideDictation(true);
+            
             // Redirect to feedback page with transcript as query parameter
             window.location.href = `add-feedback.html?dictatedText=${encodeURIComponent(transcript)}`;
-            hideDictation(false); // Hide overlay without stopping recognition again
         });
     } else {
         console.error('Create Feedback link not found in dictation actions');
     }
 
     // Add listener for the "Request Product" link within dictation actions
-    // Assuming it's the second link within #dictation-actions
     const requestProductLinkDictate = dictationActions ? dictationActions.querySelector('a:nth-child(2)') : null;
     if (requestProductLinkDictate) {
-         requestProductLinkDictate.addEventListener('click', (e) => {
-             e.preventDefault();
-             // Assuming transcript is still stored from the createFeedbackLink setup, or re-fetch if needed
-             const transcript = createFeedbackLink?.dataset.transcript || lastFinalTranscript.trim() || '';
-             console.log('Request Product action clicked with transcript:', transcript);
-             // Redirect to request page with transcript
-             window.location.href = `request-product.html?dictatedText=${encodeURIComponent(transcript)}`;
-             hideDictation(false);
-         });
+        requestProductLinkDictate.addEventListener('click', (e) => {
+            e.preventDefault();
+            const transcript = e.currentTarget.dataset.transcript || lastFinalTranscript.trim() || '';
+            console.log('Request Product action clicked with transcript:', transcript);
+            
+            // Stop recognition if it's active
+            if (recognition) {
+                try {
+                    recognition.stop();
+                } catch(e) {
+                    console.error("Recognition stop failed: ", e);
+                }
+            }
+            
+            // Hide dictation overlay and ensure recognition is stopped
+            hideDictation(true);
+            
+            // Redirect to request page with transcript
+            window.location.href = `request-product.html?dictatedText=${encodeURIComponent(transcript)}`;
+        });
     } else {
         console.error('Request Product link not found in dictation actions');
     }

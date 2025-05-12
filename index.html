@@ -415,11 +415,11 @@
                     </div>
                 </div>
                 <div class="flex items-center space-x-2">
-                    <button id="chat-button" class="p-2">
+                    <!-- <button id="chat-button" class="p-2">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 text-blue-900">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
                         </svg>
-                    </button>
+                    </button> -->
                 </div>
             </div>
 
@@ -944,6 +944,93 @@
     </div>
 
     <!-- Add script tag for JavaScript -->
+    <script type="module">
+        import { getFeedback } from './db-utils.js';
+
+        // Product image mapping
+        const productImages = {
+            'Digital Thermometer': 'https://cdn.webshopapp.com/shops/308248/files/472938159/325x325x2/medipharchem-surgical-scissors-st-st-curved.jpg',
+            'Gloves - Size M': 'https://www.gloves.com/cdn/shop/articles/maskmedicare-shop-zCsup0tF-q4-unsplash.jpg?v=1673613431',
+            'Synguard Nitrile Exam Gloves': 'https://m.media-amazon.com/images/I/6166OEAwJ9L._AC_SX679_.jpg',
+            'Masks - Type IIR': 'https://hdbrows.com/shop/pro/media/catalog/product/cache/83883c3d58d0958e9d4c7e2cf62df9ac/t/y/type-iir-mask.jpg',
+            'Surgical Scissors': 'https://cdn.webshopapp.com/shops/308248/files/472938159/325x325x2/medipharchem-surgical-scissors-st-st-curved.jpg'
+        };
+
+        // Function to create a feedback card
+        function createFeedbackCard(feedback) {
+            const timestamp = new Date(feedback.timestamp || new Date());
+            const timeAgo = Math.floor((new Date() - timestamp) / (1000 * 60 * 60 * 24)); // days ago
+            
+            // Get product image or fallback to placeholder
+            const productImage = productImages[feedback.product] || 'https://via.placeholder.com/80';
+            
+            return `
+                <div class="card p-4">
+                    <!-- Product Info Row -->
+                    <div class="flex items-center space-x-4">
+                        <div class="w-20 h-20 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
+                            <img src="${productImage}" alt="${feedback.product}" class="w-full h-full object-cover">
+                        </div>
+                        <div class="flex-1">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h3 class="text-lg font-medium text-gray-900">${feedback.product}</h3>
+                                    <p class="text-gray-500">Medical Supplies</p>
+                                </div>
+                                
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="h-px bg-gray-200 my-4"></div>
+
+                    <!-- Feedback Row -->
+                    <div>
+                        <div class="flex items-center mb-2">
+                            <div class="flex">
+                                ${Array(parseInt(feedback.rating) || 0).fill().map(() => `
+                                    <svg class="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                                `).join('')}
+                                ${Array(5 - (parseInt(feedback.rating) || 0)).fill().map(() => `
+                                    <svg class="w-5 h-5 text-gray-300" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                                `).join('')}
+                            </div>
+                            <span class="ml-auto text-sm text-gray-500">${timeAgo} days ago</span>
+                        </div>
+                        <p class="text-gray-700">"${feedback.text}"</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Function to load and display feedback
+        async function loadFeedback() {
+            try {
+                const feedbackContainer = document.querySelector('#feedback-content .space-y-4');
+                const feedback = await getFeedback();
+                
+                if (feedback && feedback.length > 0) {
+                    // Create a document fragment to hold the new feedback cards
+                    const fragment = document.createDocumentFragment();
+                    const tempDiv = document.createElement('div');
+                    
+                    // Add each feedback item
+                    feedback.forEach(item => {
+                        tempDiv.innerHTML = createFeedbackCard(item);
+                        fragment.appendChild(tempDiv.firstElementChild);
+                    });
+                    
+                    // Insert the new feedback at the beginning of the container
+                    feedbackContainer.insertBefore(fragment, feedbackContainer.firstChild);
+                }
+            } catch (error) {
+                console.error('Error loading feedback:', error);
+            }
+        }
+
+        // Load feedback when the page loads
+        document.addEventListener('DOMContentLoaded', loadFeedback);
+    </script>
     <script type="module" src="script.js"></script>
 
     <!-- Add script at the bottom of the body to expose functions globally -->
