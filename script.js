@@ -10,14 +10,14 @@ async function displaySupabaseFeedback() {
             return;
         }
 
-        const result = await getFeedback();
-        if (!result) {
-            console.error('No feedback data received');
-            return;
+        const response = await fetch('/api/feedback');
+        if (!response.ok) {
+            throw new Error('Failed to fetch feedback');
         }
+        const feedback = await response.json();
 
         // Create HTML for each feedback item
-        const feedbackHTML = result.map(feedback => `
+        const feedbackHTML = feedback.map(feedback => `
             <div class="card p-4">
                 <!-- Product Info Row -->
                 <div class="flex items-center space-x-4">
@@ -60,7 +60,7 @@ async function displaySupabaseFeedback() {
             </div>
         `).join('');
 
-        // Insert the Supabase feedback cards at the beginning of the container
+        // Insert the feedback cards at the beginning of the container
         feedbackContainer.insertAdjacentHTML('afterbegin', feedbackHTML);
 
     } catch (error) {
@@ -207,9 +207,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const cancelButton = document.getElementById('cancel-photo');
     const photoReviewContainer = document.getElementById('photo-review-container');
     const capturedPhotoPreview = document.getElementById('captured-photo-preview');
+    const cameraControls = document.getElementById('camera-controls');
 
     let stream = null;
     let currentFacingMode = 'environment';
+    let capturedImage = null;
 
     // Function to stop the camera stream
     const stopCamera = () => {
@@ -222,9 +224,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         if (cameraOverlay) {
             cameraOverlay.classList.add('hidden');
-        }
-        if (photoReviewContainer) {
-            photoReviewContainer.classList.add('hidden');
         }
     };
 
@@ -246,51 +245,163 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             if (cameraOverlay) {
                 cameraOverlay.classList.remove('hidden');
-                photoReviewContainer.classList.add('hidden');
+                if (photoReviewContainer) {
+                    photoReviewContainer.classList.add('hidden');
+                }
+                if (cameraControls) {
+                    cameraControls.classList.remove('hidden');
+                }
+                if (videoElement) {
+                    videoElement.classList.remove('hidden');
+                }
             }
         } catch (error) {
             console.error('Error accessing camera:', error);
-            alert('Failed to access camera. Please ensure camera permissions are granted.');
+            alert('Error accessing camera: ' + error.message);
         }
     };
 
-    // Add event listeners for camera functionality
+    // Function to capture photo
+    const capturePhoto = () => {
+        if (!videoElement || !stream) {
+            console.error("Video element or stream not available for capture");
+            return;
+        }
+        
+        console.log("Capturing photo...");
+        
+        // Create a canvas to capture the video frame
+        const canvas = document.createElement('canvas');
+        canvas.width = videoElement.videoWidth;
+        canvas.height = videoElement.videoHeight;
+        const ctx = canvas.getContext('2d');
+        
+        // Draw the current video frame to the canvas
+        ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+        
+        // Convert to data URL (base64)
+        capturedImage = canvas.toDataURL('image/jpeg', 0.8); // Add quality parameter for compression
+        
+        // Show the captured image for review
+        if (capturedPhotoPreview) {
+            capturedPhotoPreview.src = capturedImage;
+            console.log("Setting preview image source");
+        } else {
+            console.error("Photo preview element not found");
+        }
+        
+        // Update UI to show review options
+        showPhotoReview();
+        console.log("Photo captured successfully");
+    };
+
+    // Function to show photo review UI
+    const showPhotoReview = () => {
+        if (!photoReviewContainer || !cameraOverlay) {
+            console.error("Photo review container or camera overlay not found");
+            return;
+        }
+        
+        console.log("Showing photo review UI");
+        
+        // Hide video preview
+        if (videoElement) {
+            videoElement.classList.add('hidden');
+            console.log("Video element hidden");
+        }
+        
+        // Hide camera controls
+        if (cameraControls) {
+            cameraControls.classList.add('hidden');
+            console.log("Camera controls hidden");
+        }
+        
+        // Show photo review container
+        photoReviewContainer.classList.remove('hidden');
+        console.log("Photo review container shown");
+        
+        // Setup the action buttons
+        const addFeedbackBtn = document.getElementById('add-feedback-photo-btn');
+        if (addFeedbackBtn) {
+            // Update the href to include the image
+            addFeedbackBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                // Store the image in localStorage
+                console.log("Saving image to localStorage");
+                localStorage.setItem('capturedImage', capturedImage);
+                window.location.href = 'add-feedback.html?photoSource=localStorage';
+            });
+        }
+        
+        // Setup the request product button
+        const requestProductBtn = document.getElementById('request-product-photo-btn');
+        if (requestProductBtn) {
+            requestProductBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                // Store the image in localStorage
+                console.log("Saving image to localStorage");
+                localStorage.setItem('capturedImage', capturedImage);
+                window.location.href = 'request-product.html?photoSource=localStorage';
+            });
+        }
+    };
+
+    // Function to retake photo
+    const retakePhoto = () => {
+        console.log("Retake photo called");
+        
+        // Hide the photo review container
+        if (photoReviewContainer) {
+            photoReviewContainer.classList.add('hidden');
+            console.log("Photo review container hidden");
+        }
+        
+        // Show the video and camera controls again
+        if (videoElement) {
+            videoElement.classList.remove('hidden');
+            console.log("Video element shown");
+        }
+        
+        if (cameraControls) {
+            cameraControls.classList.remove('hidden');
+            console.log("Camera controls shown");
+        }
+        
+        // Clear the captured image
+        capturedImage = null;
+        console.log("Captured image cleared");
+    };
+
+    // Check if camera button exists before adding listener
     if (cameraButton) {
         cameraButton.addEventListener('click', startCamera);
+        console.log("Camera button listener added");
     }
 
+    // Check if capture button exists before adding listener
     if (captureButton) {
-        captureButton.addEventListener('click', () => {
-            if (videoElement && videoElement.videoWidth) {
-                const canvas = document.createElement('canvas');
-                canvas.width = videoElement.videoWidth;
-                canvas.height = videoElement.videoHeight;
-                canvas.getContext('2d').drawImage(videoElement, 0, 0);
-                
-                const photoData = canvas.toDataURL('image/jpeg');
-                if (capturedPhotoPreview) {
-                    capturedPhotoPreview.src = photoData;
-                }
-                
-                // Store the photo in localStorage
-                localStorage.setItem('tempCapturedPhoto', photoData);
-                
-                // Show the photo review container
-                if (photoReviewContainer) {
-                    photoReviewContainer.classList.remove('hidden');
-                }
-                
-                // Update the Add Feedback link
-                const addFeedbackBtn = document.getElementById('add-feedback-photo-btn');
-                if (addFeedbackBtn) {
-                    addFeedbackBtn.href = 'add-feedback.html?photoSource=localStorage';
-                }
-            }
-        });
+        captureButton.addEventListener('click', capturePhoto);
+        console.log("Capture button listener added");
     }
 
+    // Check if cancel button exists before adding listener
     if (cancelButton) {
         cancelButton.addEventListener('click', stopCamera);
+        console.log("Cancel button listener added");
+    }
+    
+    // Add listener for retake button
+    const retakeButton = document.getElementById('retake-photo');
+    if (retakeButton) {
+        retakeButton.addEventListener('click', retakePhoto);
+        console.log("Retake button listener added");
+    }
+    
+    // Add listener for cancel review button
+    const cancelReviewButton = document.getElementById('cancel-review');
+    if (cancelReviewButton) {
+        cancelReviewButton.addEventListener('click', stopCamera);
+        console.log("Cancel review button listener added");
     }
 
     // Dictation elements
@@ -750,23 +861,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     // Function to handle delete button click
-    const handleDeleteRequest = (event) => {
-        const button = event.currentTarget;
-        const swipeContainer = button.closest('.swipe-container');
-        const index = parseInt(swipeContainer.dataset.index, 10);
+    const handleDeleteRequest = async (event) => {
+        const requestId = event.currentTarget.dataset.id;
+        
+        try {
+            const response = await fetch(`/api/requests?id=${requestId}`, {
+                method: 'DELETE'
+            });
 
-        console.log(`Deleting request at index: ${index}`);
+            if (!response.ok) {
+                throw new Error('Failed to delete request');
+            }
 
-            let requests = JSON.parse(localStorage.getItem('productRequests') || '[]');
-        if (index >= 0 && index < requests.length) {
-            requests.splice(index, 1); // Remove the item from the array
-            localStorage.setItem('productRequests', JSON.stringify(requests));
-            // Animate removal (optional, simple removal for now)
-            swipeContainer.remove(); // Remove from DOM immediately
-            displayRequestCards(); // Re-render to potentially show 'no requests' message and update indicator
-            showToast("Request deleted.");
-        } else {
-            console.error("Invalid index for deletion:", index);
+            showToast('Request deleted successfully!');
+            await displayRequestCards();
+        } catch (error) {
+            console.error('Error deleting request:', error);
+            showToast('Failed to delete request. Please try again.');
         }
     };
 
@@ -1144,31 +1255,35 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    const handleAddRequestSubmit = (event) => {
+    const handleAddRequestSubmit = async (event) => {
         event.preventDefault();
         
-        const formData = {
-            name: document.getElementById('product-name').value,
-            quantity: parseInt(document.getElementById('quantity').value),
-            urgency: document.getElementById('urgency').value,
-            notes: document.getElementById('notes').value,
-            status: 'Pending',
-            timeLeft: '45 min left',
-            requester: 'Dr. Smith', // This would come from user session in a real app
-            department: 'Emergency' // This would come from user session in a real app
-        };
+        try {
+            const formData = new FormData(event.target);
+            const requestData = {
+                name: formData.get('name'),
+                details: formData.get('details')
+            };
 
-        // Add the request to localStorage
-        let requests = JSON.parse(localStorage.getItem('productRequests') || '[]');
-        requests.push(formData);
-        localStorage.setItem('productRequests', JSON.stringify(requests));
+            const response = await fetch('/api/requests', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestData)
+            });
 
-        // Hide modal and show success message
-        hideAddRequestModal();
-        showToast("Request added successfully!");
-        
-        // Refresh the request cards display
-        displayRequestCards();
+            if (!response.ok) {
+                throw new Error('Failed to submit request');
+            }
+
+            showToast('Request submitted successfully!');
+            hideAddRequestModal();
+            await displayRequestCards();
+        } catch (error) {
+            console.error('Error submitting request:', error);
+            showToast('Failed to submit request. Please try again.');
+        }
     };
 
     // Add event listeners for the add request flow
@@ -1405,30 +1520,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     const handleFeedbackSubmit = async (event) => {
         event.preventDefault();
         
-        const feedback = {
-            ...feedbackState,
-            message: document.getElementById('feedback-message').value,
-            suggestedSummary: document.getElementById('suggested-summary').value,
-            rating: feedbackState.rating,
-            is_critical: document.getElementById('critical-safety').checked,
-            timestamp: new Date().toISOString()
-        };
-
         try {
-            // Here you would typically send the feedback to your backend
-            console.log('Submitting feedback:', feedback);
-            
-            // For now, we'll store it in localStorage
-            let feedbacks = JSON.parse(localStorage.getItem('productFeedbacks') || '[]');
-            feedbacks.push(feedback);
-            localStorage.setItem('productFeedbacks', JSON.stringify(feedbacks));
-            
-            showToast('Feedback submitted successfully! 3');
+            const formData = new FormData(event.target);
+            const feedbackData = {
+                product: formData.get('product'),
+                rating: parseInt(formData.get('rating')),
+                text: formData.get('feedback'),
+                photo_url: currentPhotoUrl,
+                is_critical: formData.get('is_critical') === 'true'
+            };
+
+            const response = await fetch('/api/feedback', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(feedbackData)
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to submit feedback');
+            }
+
+            showToast('Feedback submitted successfully!');
             hideFeedbackModal();
             resetFeedbackState();
-            
-            // Refresh the feedback display
-            displayFeedbackCards();
+            await displaySupabaseFeedback();
         } catch (error) {
             console.error('Error submitting feedback:', error);
             showToast('Failed to submit feedback. Please try again.');
@@ -1625,7 +1742,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 } else {
                     area.classList.add('content-pane-hidden');
                     area.classList.remove('content-pane-visible');
-                }
+            }
             });
         });
     });

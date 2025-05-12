@@ -4,14 +4,19 @@
   "description": "AMS Mobile Procurement App",
   "scripts": {
     "start": "serve",
-    "build": "echo 'No build step required'"
+    "build": "echo 'No build step required'",
+    "dev": "vercel dev"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.4",
-    "@types/react": "^19.1.0",
-    "react": "^19.1.0",
-    "react-icons": "^5.5.0",
-    "serve": "^14.0.0"
+    "@supabase/supabase-js": "^2.39.3",
+    "@vercel/node": "2.15.10",
+    "serve": "^14.2.1"
+  },
+  "resolutions": {
+    "esbuild": "^0.24.3",
+    "path-to-regexp": "^6.2.2",
+    "undici": "^5.28.5",
+    "node-fetch": "^2.6.7"
   },
   "engines": {
     "node": ">=18.0.0"
