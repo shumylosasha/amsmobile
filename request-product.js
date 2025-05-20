@@ -1,4 +1,5 @@
-import { saveProductRequest, queueOfflineOperation } from './db-utils.js';
+import { saveProductRequest } from './db-utils.js';
+import supabase from './supabase.js';
 import config from './config.js';
 
 // Product categories and items data
@@ -33,10 +34,67 @@ const productData = {
     ]
 };
 
-document.addEventListener('DOMContentLoaded', () => {
+// Request state to track selections
+let requestState = {
+    selectedProduct: null,
+    photo: null,
+    method: 'text' // Default method
+};
+
+// Authentication function
+async function signInUser() {
+    try {
+        // Check if user is already signed in
+        const { data: { user }, error: getUserError } = await supabase.auth.getUser();
+        
+        if (getUserError) {
+            console.error('Error checking user:', getUserError);
+        }
+        
+        if (!user) {
+            console.log('No authenticated user, attempting to sign in...');
+            // Try signing in with test credentials
+            const { data, error } = await supabase.auth.signInWithPassword({
+                email: 'test@example.com',
+                password: 'test123'
+            });
+            
+            if (error) {
+                console.error('Authentication error:', error.message);
+                // Try signing up if sign in fails
+                const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+                    email: 'test@example.com',
+                    password: 'test123'
+                });
+                
+                if (signUpError) {
+                    console.error('Sign up error:', signUpError.message);
+                    throw new Error(`Authentication failed: ${signUpError.message}`);
+                } else {
+                    console.log('User signed up:', signUpData);
+                    return signUpData.user;
+                }
+            } else {
+                console.log('User authenticated:', data);
+                return data.user;
+            }
+        } else {
+            console.log('User already authenticated:', user);
+            return user;
+        }
+    } catch (error) {
+        console.error('Authentication error:', error);
+        throw error;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
     const form = document.getElementById('productRequestForm');
     const submitButton = document.getElementById('submitButton');
     const statusMessage = document.getElementById('statusMessage');
+
+    // Sign in the user when the page loads
+    await signInUser();
 
     // Check for URL parameters
     const urlParams = new URLSearchParams(window.location.search);
@@ -76,6 +134,11 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (photoSource === 'localStorage') {
         const photoDataToUse = localStorage.getItem('capturedImage');
+        console.log('Photo from localStorage detected. Data length:', 
+            photoDataToUse ? photoDataToUse.length : 0,
+            'Data starts with:',
+            photoDataToUse ? photoDataToUse.substring(0, 50) + '...' : 'null');
+            
         if (photoDataToUse) {
             const photoPreview = document.getElementById('photo-preview');
             const removePhotoBtn = document.getElementById('remove-photo');
@@ -88,6 +151,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (removePhotoBtn) {
                     removePhotoBtn.classList.remove('hidden');
                 }
+                
+                // Store in request state
+                requestState.photo = photoDataToUse;
+                requestState.method = 'photo';
+                console.log('Stored photo from localStorage in requestState. Length:', 
+                    requestState.photo ? requestState.photo.length : 0);
                 
                 // Add analyzing class to trigger animation
                 photoPreview.classList.add('analyzing');
@@ -112,8 +181,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     })
                     .finally(() => {
                         photoPreview.classList.remove('analyzing');
-                        // Clear from localStorage after retrieving to free up space
-                        localStorage.removeItem('capturedImage');
+                        // Don't clear from localStorage after retrieving
+                        // We want to keep it for the upload
+                        // localStorage.removeItem('capturedImage');
                     });
             }
         }
@@ -310,54 +380,101 @@ document.addEventListener('DOMContentLoaded', () => {
         return navigator.onLine;
     }
 
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-
-        // Disable the submit button and show loading state
-        submitButton.disabled = true;
-        submitButton.textContent = 'Submitting...';
-        statusMessage.textContent = '';
-
-        // Get form data
-        const formData = {
-            productName: document.getElementById('productName').value,
-            quantity: document.getElementById('quantity').value,
-            urgency: document.getElementById('urgency').value,
-            description: document.getElementById('description').value,
-            timestamp: new Date().toISOString(),
-            status: 'pending'
-        };
-
-        try {
-            if (isOnline()) {
-                // If online, save directly to Supabase
-                await saveProductRequest(formData);
-                statusMessage.textContent = 'Product request submitted successfully!';
-                statusMessage.className = 'text-green-500';
-            } else {
-                // If offline, queue for later
-                queueOfflineOperation('saveProductRequest', formData);
-                statusMessage.textContent = 'Product request saved offline. Will sync when online.';
-                statusMessage.className = 'text-yellow-500';
-            }
+    // Form submission handler
+    const productRequestForm = document.getElementById('productRequestForm');
+    
+    if (productRequestForm) {
+        productRequestForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
             
-            // Clear form
-            form.reset();
-            
-            // Redirect after a short delay
-            setTimeout(() => {
+            try {
+                // Get the selected product from the request state or the button text
+                const selectedProductText = document.getElementById('selected-product-text');
+                const selectedProduct = requestState.selectedProduct ? 
+                    requestState.selectedProduct.name : 
+                    (selectedProductText.textContent !== 'Select Product' ? selectedProductText.textContent : null);
+                
+                // Get form field values
+                const quantity = document.getElementById('quantity').value;
+                const reason = document.getElementById('reason').value;
+                const urgent = document.getElementById('urgent').checked;
+                const preferredBrand = document.getElementById('preferredBrand').value;
+                const expectedDelivery = document.getElementById('expectedDelivery').value;
+                
+                // Validate form
+                if (!selectedProduct) {
+                    throw new Error('Please select a product');
+                }
+                
+                if (!quantity || quantity < 1) {
+                    throw new Error('Please enter a valid quantity');
+                }
+                
+                if (!reason) {
+                    throw new Error('Please enter a reason for your request');
+                }
+                
+                // Get current user
+                const { data: { user } } = await supabase.auth.getUser();
+                
+                // Upload image if exists
+                let imageUrl = null;
+                if (requestState.photo) {
+                    console.log('Photo detected, starting upload...');
+                    console.log('Photo data type:', typeof requestState.photo);
+                    console.log('Photo data length:', requestState.photo.length);
+                    console.log('Photo data starts with:', requestState.photo.substring(0, 50) + '...');
+                    
+                    // Check if this came from localStorage (search params)
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const photoSource = urlParams.get('photoSource');
+                    
+                    if (photoSource === 'localStorage') {
+                        console.log('This is a localStorage photo, processing accordingly');
+                        // Make sure image is properly formatted as data URL
+                        if (!requestState.photo.startsWith('data:image')) {
+                            console.log('Photo does not start with data:image, prepending prefix');
+                            requestState.photo = 'data:image/jpeg;base64,' + requestState.photo.replace(/^data:image\/jpeg;base64,/, '');
+                        }
+                    }
+                    
+                    imageUrl = await uploadProductImage(requestState.photo);
+                    console.log('Image upload completed, URL:', imageUrl);
+                } else {
+                    console.log('No photo to upload');
+                }
+                
+                // Prepare request data
+                const requestData = {
+                    product_name: selectedProduct,
+                    quantity: parseInt(quantity),
+                    urgency: urgent ? 'critical' : 'normal',
+                    description: reason,
+                    preferred_brand: preferredBrand || null,
+                    expected_delivery: expectedDelivery || null,
+                    timestamp: new Date().toISOString(),
+                    status: 'pending',
+                    user_id: user ? user.id : null,
+                    method: requestState.method,
+                    image_url: imageUrl
+                };
+                
+                console.log('Submitting product request:', requestData);
+                
+                // Save to Supabase using the utility function
+                const data = await saveProductRequest(requestData);
+                console.log('Product request saved successfully:', data);
+                
+                // Success - redirect to home
+                alert('Your product request has been submitted successfully!');
                 window.location.href = 'index.html';
-            }, 2000);
-        } catch (error) {
-            console.error('Error submitting request:', error);
-            statusMessage.textContent = 'Error submitting request. Please try again.';
-            statusMessage.className = 'text-red-500';
-        } finally {
-            // Re-enable the submit button
-            submitButton.disabled = false;
-            submitButton.textContent = 'Submit Request';
-        }
-    });
+                
+            } catch (error) {
+                console.error('Error submitting request:', error);
+                alert(`Error submitting request: ${error.message}`);
+            }
+        });
+    }
 
     let stream = null;
     let recognition = null;
@@ -423,6 +540,10 @@ document.addEventListener('DOMContentLoaded', () => {
             photoPreview.src = photoData;
             photoPreview.style.display = 'block';
             
+            // Store in request state
+            requestState.photo = photoData;
+            requestState.method = 'photo';
+            
             // Clean up camera
             stopCamera();
 
@@ -469,6 +590,7 @@ document.addEventListener('DOMContentLoaded', () => {
         removePhotoBtn.addEventListener('click', () => {
             photoPreview.style.display = 'none';
             removePhotoBtn.classList.add('hidden');
+            requestState.photo = null;
         });
     }
 
@@ -632,6 +754,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Prepare API request
             console.log('Preparing API request...');
             const requestBody = {
+                // IMPORTANT: Do not change the model name - this specific version is required
                 model: "gpt-4.1-nano-2025-04-14",
                 messages: [
                     {
@@ -688,6 +811,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let productName = 'Unknown';
             let productType = 'Other';
             let description = 'No description available';
+            let scenario = 3; // Default to unknown/error scenario
 
             try {
                 // First try to parse as JSON
@@ -695,38 +819,46 @@ document.addEventListener('DOMContentLoaded', () => {
                 productName = parsedContent.productName || 'Unknown';
                 productType = parsedContent.productType || 'Other';
                 description = parsedContent.description || 'No description available';
-            } catch (e) {
-                // If JSON parsing fails, try line by line parsing
-                const lines = analysis.split('\n');
-                for (const line of lines) {
-                    if (line.toLowerCase().includes('productname:')) {
-                        productName = line.split(':')[1].trim().replace(/["']/g, '');
-                    } else if (line.toLowerCase().includes('producttype:')) {
-                        productType = line.split(':')[1].trim().replace(/["']/g, '');
-                    } else if (line.toLowerCase().includes('description:')) {
-                        description = line.split(':')[1].trim().replace(/["']/g, '');
-                    }
+            } catch (parseError) {
+                // If JSON parsing fails, try to extract using regex
+                console.log('JSON parsing failed, using regex extraction');
+                
+                const productNameMatch = analysis.match(/productName:\s*(.+?)(?:\n|$)/);
+                const productTypeMatch = analysis.match(/productType:\s*(.+?)(?:\n|$)/);
+                const descriptionMatch = analysis.match(/description:\s*(.+?)(?:\n|$)/);
+                
+                if (productNameMatch) productName = productNameMatch[1].trim();
+                if (productTypeMatch) productType = productTypeMatch[1].trim();
+                if (descriptionMatch) description = descriptionMatch[1].trim();
+            }
+            
+            // Determine the scenario based on the product type
+            // Prioritize the productType field first
+            if (productType.includes('Medical Nitrile Exam Gloves')) {
+                scenario = 1; // Synguard Nitrile Exam Gloves
+            } else if (productType.includes('General Gloves')) {
+                scenario = 2; // General Gloves
+            } else {
+                // Fall back to name and description only if productType didn't match
+                if ((productName.includes('Synguard') && productName.toLowerCase().includes('nitrile')) || 
+                    (productName.toLowerCase().includes('nitrile') && productName.toLowerCase().includes('exam'))) {
+                    scenario = 1; // Synguard Nitrile Exam Gloves
+                } else if (productName.toLowerCase().includes('gloves') || 
+                          description.toLowerCase().includes('gloves')) {
+                    scenario = 2; // General Gloves
+                } else {
+                    scenario = 3; // Other/Unknown
                 }
             }
-
-            console.log('Parsed results:', {
-                productName,
-                productType,
-                description
-            });
-
-            // Determine scenario based on product type
-            let scenario;
-            if (productType.toLowerCase().includes('medical nitrile exam gloves') && productName.toLowerCase().includes('synguard')) {
-                scenario = 1;
-            } else if (productType.toLowerCase().includes('glove')) {
-                scenario = 2;
-            } else {
-                scenario = 3;
-            }
-
-            console.log('Determined scenario:', scenario, 'for product type:', productType);
-
+            
+            // Store the product in request state
+            const productToSelect = {
+                name: productName,
+                type: productType,
+                description: description
+            };
+            requestState.selectedProduct = productToSelect;
+            
             return {
                 productName,
                 productType,
@@ -735,32 +867,30 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
         } catch (error) {
-            console.error('Detailed error in analyzeImageWithChatGPT:', {
-                message: error.message,
-                stack: error.stack,
-                name: error.name
-            });
+            console.error('Error in analyzeImageWithChatGPT:', error);
             
             // Show error in UI
             const aiDetectionNotice = document.getElementById('ai-detection-notice');
-            aiDetectionNotice.innerHTML = `
-                <div class="bg-red-50 rounded-md p-3 mt-2">
-                    <div class="flex">
-                        <div class="flex-shrink-0">
-                            <svg class="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
-                            </svg>
-                        </div>
-                        <div class="ml-3">
-                            <h3 class="text-sm font-medium text-red-800">Error Analyzing Image</h3>
-                            <div class="mt-2 text-sm text-red-700">
-                                <p>${error.message}</p>
-                                <p class="mt-1">Please check browser console for more details.</p>
+            if (aiDetectionNotice) {
+                aiDetectionNotice.innerHTML = `
+                    <div class="bg-red-50 rounded-md p-3 mt-2">
+                        <div class="flex">
+                            <div class="flex-shrink-0">
+                                <svg class="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                                </svg>
+                            </div>
+                            <div class="ml-3">
+                                <h3 class="text-sm font-medium text-red-800">Error Analyzing Image</h3>
+                                <div class="mt-2 text-sm text-red-700">
+                                    <p>${error.message}</p>
+                                    <p class="mt-1">Please select a product manually.</p>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            `;
+                `;
+            }
 
             return {
                 productName: 'Unknown',
@@ -892,4 +1022,289 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     }
-}); 
+
+    // Function to compress image
+    function compressImage(imageData, maxWidth = 1024, maxHeight = 1024, quality = 0.8) {
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.onload = function() {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+
+                // Calculate new dimensions
+                if (width > height) {
+                    if (width > maxWidth) {
+                        height = Math.round((height * maxWidth) / width);
+                        width = maxWidth;
+                    }
+                } else {
+                    if (height > maxHeight) {
+                        width = Math.round((width * maxHeight) / height);
+                        height = maxHeight;
+                    }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // Convert to JPEG with compression
+                const compressedData = canvas.toDataURL('image/jpeg', quality);
+                resolve(compressedData);
+            };
+            img.src = imageData;
+        });
+    }
+
+    // Function to upload image to Supabase Storage
+    async function uploadProductImage(imageData) {
+        try {
+            // Log the start of the process
+            console.log('Starting image upload process...');
+            
+            // Validate image data format
+            if (!imageData) {
+                throw new Error('No image data provided');
+            }
+            
+            console.log('Image data type:', typeof imageData);
+            console.log('Image data length:', imageData.length);
+            console.log('Image data starts with:', imageData.substring(0, 50) + '...');
+            
+            // Ensure proper data URL format
+            if (!imageData.startsWith('data:image')) {
+                console.log('Image data does not start with data:image prefix, adding it');
+                imageData = 'data:image/jpeg;base64,' + imageData.replace(/^data:image\/jpeg;base64,/, '');
+            }
+
+            // Compress image before upload
+            console.log('Compressing image...');
+            const compressedImage = await compressImage(imageData);
+            console.log('Image compressed successfully');
+
+            // Convert base64 to blob
+            console.log('Converting to blob...');
+            const base64Data = compressedImage.split(',')[1];
+            const byteCharacters = atob(base64Data);
+            const byteArrays = [];
+            
+            for (let offset = 0; offset < byteCharacters.length; offset += 1024) {
+                const slice = byteCharacters.slice(offset, offset + 1024);
+                const byteNumbers = new Array(slice.length);
+                for (let i = 0; i < slice.length; i++) {
+                    byteNumbers[i] = slice.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                byteArrays.push(byteArray);
+            }
+            
+            const blob = new Blob(byteArrays, { type: 'image/jpeg' });
+            console.log('Blob created, size:', Math.round(blob.size / 1024), 'KB');
+
+            // Check authentication
+            console.log('Checking authentication...');
+            const { data: { user }, error: authError } = await supabase.auth.getUser();
+            if (authError) {
+                console.error('Authentication error:', {
+                    message: authError.message,
+                    status: authError.status,
+                    details: authError
+                });
+                throw new Error(`Authentication failed: ${authError.message}`);
+            }
+            if (!user) {
+                console.error('No authenticated user found');
+                await signInUser(); // Try to sign in now
+                const { data: { user: retryUser } } = await supabase.auth.getUser();
+                if (!retryUser) {
+                    throw new Error('Still no authenticated user after retry');
+                }
+                console.log('Authentication successful after retry, user:', retryUser.id);
+            } else {
+                console.log('Authentication successful, user:', user.id);
+            }
+
+            // Using exact same approach as in add-feedback.html
+            const bucketName = 'feedback-images';
+            const fileName = `product-${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+            console.log('Generated filename:', fileName);
+            console.log('Full upload path:', `public/${fileName}`);
+            console.log('Bucket name:', bucketName);
+
+            // Attempt upload
+            console.log('Starting file upload to bucket:', bucketName);
+            const { data: uploadData, error: uploadError } = await supabase.storage
+                .from(bucketName)
+                .upload(`public/${fileName}`, blob, {
+                    cacheControl: '3600',
+                    upsert: false,
+                    contentType: 'image/jpeg'
+                });
+
+            if (uploadError) {
+                console.error('Upload error details:', {
+                    message: uploadError.message,
+                    status: uploadError.status,
+                    statusText: uploadError.statusText,
+                    details: uploadError.details,
+                    name: uploadError.name,
+                    code: uploadError.code,
+                    hint: uploadError.hint
+                });
+                throw uploadError;
+            }
+
+            console.log('File uploaded successfully. Upload data:', uploadData);
+
+            // Get public URL - exact structure from add-feedback.html
+            console.log('Getting public URL...');
+            const { data: urlData, error: urlError } = supabase.storage
+                .from(bucketName)
+                .getPublicUrl(`public/${fileName}`);
+
+            if (urlError) {
+                console.error('URL generation error:', {
+                    message: urlError.message,
+                    status: urlError.status,
+                    details: urlError
+                });
+                throw urlError;
+            }
+
+            const publicUrl = urlData.publicUrl;
+            console.log('Public URL generated:', publicUrl);
+            return publicUrl;
+
+        } catch (error) {
+            console.error('Detailed upload error:', {
+                message: error.message,
+                name: error.name,
+                code: error.code,
+                status: error.status,
+                statusText: error.statusText,
+                details: error.details,
+                hint: error.hint,
+                stack: error.stack
+            });
+            
+            alert(`Image upload failed: ${error.message}\nPlease check browser console for details.`);
+            return null;
+        }
+    }
+
+    // Function to test storage bucket access
+    async function testBucketAccess() {
+        try {
+            console.log('Testing bucket access...');
+            const { data, error } = await supabase.storage.getBucket('feedback-images');
+            
+            if (error) {
+                console.error('Bucket access error:', error);
+                return false;
+            }
+            
+            console.log('Bucket access successful:', data);
+            return true;
+        } catch (error) {
+            console.error('Exception testing bucket access:', error);
+            return false;
+        }
+    }
+
+    // Function to test uploading a simple image
+    async function testImageUpload() {
+        try {
+            // Create a small test image using canvas
+            const canvas = document.createElement('canvas');
+            canvas.width = 100;
+            canvas.height = 100;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'red';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            const imageData = canvas.toDataURL('image/jpeg', 0.8);
+            
+            // Log the image data
+            console.log('Test image created');
+            
+            // Convert base64 to blob
+            const base64Data = imageData.split(',')[1];
+            const byteCharacters = atob(base64Data);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: 'image/jpeg' });
+            
+            // Check authentication
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                console.error('No authenticated user for test upload');
+                return null;
+            }
+            
+            // Attempt upload
+            const bucketName = 'feedback-images';
+            const fileName = `test-${Date.now()}.jpg`;
+            console.log('Testing upload to:', bucketName, 'path:', `public/${fileName}`);
+            
+            const { data, error } = await supabase.storage
+                .from(bucketName)
+                .upload(`public/${fileName}`, blob, {
+                    cacheControl: '3600',
+                    upsert: false,
+                    contentType: 'image/jpeg'
+                });
+            
+            if (error) {
+                console.error('Test upload error:', error);
+                return null;
+            }
+            
+            console.log('Test upload successful:', data);
+            
+            // Get public URL
+            const { data: urlData } = supabase.storage
+                .from(bucketName)
+                .getPublicUrl(`public/${fileName}`);
+            
+            console.log('Test URL:', urlData.publicUrl);
+            return urlData.publicUrl;
+        } catch (error) {
+            console.error('Exception in test upload:', error);
+            return null;
+        }
+    }
+
+    // Add test button to the page for debugging
+    if (form) {
+        const testButton = document.createElement('button');
+        testButton.type = 'button';
+        testButton.textContent = 'Test Image Upload';
+        testButton.className = 'mt-4 bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded';
+        testButton.onclick = async () => {
+            // Test authentication
+            await signInUser();
+            
+            // Test bucket access
+            const bucketAccess = await testBucketAccess();
+            console.log('Bucket access test result:', bucketAccess);
+            
+            // Test image upload
+            const testUrl = await testImageUpload();
+            console.log('Test upload result:', testUrl);
+            
+            alert(`Test completed. Check console for results.\nUpload URL: ${testUrl || 'Failed'}`);
+        };
+        
+        // Add before the submit button
+        if (submitButton && submitButton.parentNode) {
+            submitButton.parentNode.insertBefore(testButton, submitButton);
+        }
+    }
+});
+
+// No need to export saveProductRequest function here since we're importing it from db-utils.js 

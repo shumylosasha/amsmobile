@@ -945,7 +945,8 @@
 
     <!-- Add script tag for JavaScript -->
     <script type="module">
-        import { getFeedback } from './db-utils.js';
+        import { getFeedback, getProductRequests } from './db-utils.js';
+        import supabase from './supabase.js';
 
         // Product image mapping
         const productImages = {
@@ -953,7 +954,10 @@
             'Gloves - Size M': 'https://www.gloves.com/cdn/shop/articles/maskmedicare-shop-zCsup0tF-q4-unsplash.jpg?v=1673613431',
             'Synguard Nitrile Exam Gloves': 'https://m.media-amazon.com/images/I/6166OEAwJ9L._AC_SX679_.jpg',
             'Masks - Type IIR': 'https://hdbrows.com/shop/pro/media/catalog/product/cache/83883c3d58d0958e9d4c7e2cf62df9ac/t/y/type-iir-mask.jpg',
-            'Surgical Scissors': 'https://cdn.webshopapp.com/shops/308248/files/472938159/325x325x2/medipharchem-surgical-scissors-st-st-curved.jpg'
+            'Surgical Scissors': 'https://cdn.webshopapp.com/shops/308248/files/472938159/325x325x2/medipharchem-surgical-scissors-st-st-curved.jpg',
+            'Surgical Drapes': 'https://www.medicalexpo.com/prod/medline/product-68697-902857.html',
+            'Anesthesia Machine Parts': 'https://www.dremed.com/catalog/images/1583259135_mrii-hero-mobile.png',
+            'Disposable Syringes': 'https://cdn.shopify.com/s/files/1/0069/9584/7365/products/60cc-syringes_800x.jpg'
         };
 
         // Function to create a feedback card
@@ -1003,6 +1007,74 @@
             `;
         }
 
+        // Function to create a request card
+        function createRequestCard(request) {
+            const timestamp = new Date(request.timestamp || new Date());
+            const timeAgo = Math.floor((new Date() - timestamp) / (1000 * 60 * 60 * 24)); // days ago
+            
+            // Define status based on request status
+            let status = request.status || 'New';
+            let statusClass = '';
+            
+            if (status === 'Completed') {
+                statusClass = 'border-l-4 border-green-500';
+            } else if (status === 'Processing' || status === 'In Progress') {
+                statusClass = 'border-l-4 border-yellow-500';
+            } else if (request.priority === 'Urgent') {
+                statusClass = 'border-l-4 border-red-500';
+                status = 'Processing';
+            } else {
+                // Default border for new/no status requests
+                statusClass = 'border-l-4 border-blue-500';
+                status = 'New';
+            }
+            
+            // Format date for expected delivery
+            const expectedDelivery = request.expected_delivery 
+                ? new Date(request.expected_delivery).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+                : `${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} (Estimated)`;
+            
+            const deliveryType = request.priority === 'Urgent' ? ' (Express)' : '';
+            
+            return `
+                <div class="card p-4 ${statusClass}">
+                    <div class="flex justify-between items-start mb-3">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900">${request.product_name || 'Product Request'}</h3>
+                            <p class="text-sm text-gray-500">Request #${request.request_id || `REQ-${new Date().getTime().toString().substr(-8)}`}</p>
+                        </div>
+                        <span class="px-2 py-1 text-xs font-semibold rounded-full ${request.priority === 'Urgent' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}">
+                            ${request.priority || 'Standard'}
+                        </span>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <p class="text-sm font-medium text-gray-500">Status</p>
+                            <p class="text-sm text-gray-900">${status}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm font-medium text-gray-500">Expected Delivery</p>
+                            <p class="text-sm text-gray-900">${expectedDelivery}${deliveryType}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm font-medium text-gray-500">Requested Quantity</p>
+                            <p class="text-sm text-gray-900">${request.quantity || '1'} ${request.unit || 'units'}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm font-medium text-gray-500">Preferred Brand</p>
+                            <p class="text-sm text-gray-900">${request.preferred_brand || 'Any'}</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <p class="text-sm font-medium text-gray-500">Reason for Request</p>
+                        <p class="text-sm text-gray-900 mt-1">${request.reason || 'Standard restock'}</p>
+                    </div>
+                </div>
+            `;
+        }
+
         // Function to load and display feedback
         async function loadFeedback() {
             try {
@@ -1028,8 +1100,94 @@
             }
         }
 
-        // Load feedback when the page loads
-        document.addEventListener('DOMContentLoaded', loadFeedback);
+        // Function to load and display requests
+        async function loadRequests() {
+            console.log('Loading requests from Supabase - simplified approach');
+            try {
+                // Direct fetch from Supabase
+                const { data, error } = await supabase
+                    .from('product_requests')
+                    .select('*')
+                    .order('timestamp', { ascending: false });
+                
+                if (error) {
+                    console.error('Error fetching requests:', error);
+                    return;
+                }
+                
+                console.log('Successfully fetched requests:', data);
+                
+                if (data && data.length > 0) {
+                    const requestsContainer = document.querySelector('#requests-content .space-y-4');
+                    // Create a document fragment to hold the new request cards
+                    const fragment = document.createDocumentFragment();
+                    const tempDiv = document.createElement('div');
+                    
+                    // Add each request item
+                    data.forEach(item => {
+                        console.log('Processing request:', item.product_name || 'Unknown product');
+                        tempDiv.innerHTML = createRequestCard(item);
+                        fragment.appendChild(tempDiv.firstElementChild);
+                    });
+                    
+                    // Insert the requests at the top of the container
+                    if (requestsContainer.firstChild) {
+                        requestsContainer.insertBefore(fragment, requestsContainer.firstChild);
+                    } else {
+                        requestsContainer.appendChild(fragment);
+                    }
+                }
+            } catch (error) {
+                console.error('Error in loadRequests:', error);
+            }
+        }
+
+        // Load feedback and requests when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            loadFeedback();
+            loadRequests();
+            
+            // Update notification badges
+            updateRequestNotificationBadge();
+        });
+        
+        // Function to update the notification badge on the Requests tab
+        async function updateRequestNotificationBadge() {
+            console.log('Updating request notification badge - simplified approach');
+            try {
+                // Direct fetch from Supabase
+                const { data, error } = await supabase
+                    .from('product_requests')
+                    .select('*');
+                    
+                if (error) {
+                    console.error('Error fetching request count:', error);
+                    return;
+                }
+                
+                console.log('Got requests for badge:', data ? data.length : 0);
+                
+                // Count requests that need attention (not completed)
+                const pendingRequests = data.filter(req => 
+                    req.status !== 'Completed' && req.status !== 'Delivered'
+                );
+                
+                console.log('Pending requests count:', pendingRequests.length);
+                
+                // Update the badge in the Requests tab
+                const requestsBadge = document.querySelector('[data-tab-button="requests-content"] .rounded-full');
+                if (requestsBadge) {
+                    if (pendingRequests.length > 0) {
+                        requestsBadge.textContent = pendingRequests.length;
+                        requestsBadge.classList.remove('hidden');
+                    } else {
+                        requestsBadge.classList.add('hidden');
+                    }
+                }
+            } catch (error) {
+                console.error('Error updating request badge:', error);
+            }
+        }
     </script>
     <script type="module" src="script.js"></script>
 

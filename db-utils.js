@@ -22,25 +22,57 @@ export async function saveProductRequest(requestData) {
 
 // Get all product requests for the current user
 export async function getProductRequests() {
-  const { data, error } = await supabase
-    .from('product_requests')
-    .select('*, request_responses(*)')
-    .order('timestamp', { ascending: false });
+  console.log('DB-UTILS: Attempting to fetch product requests');
   
-  if (error) throw error;
-  return data;
+  try {
+    const { data, error } = await supabase
+      .from('product_requests')
+      .select('*')
+      .order('timestamp', { ascending: false });
+    
+    if (error) {
+      console.error('DB-UTILS: Error fetching product requests:', error);
+      throw error;
+    }
+    
+    console.log('DB-UTILS: Successfully fetched product requests:', data);
+    return data;
+  } catch (error) {
+    console.error('DB-UTILS: Error in getProductRequests function:', {
+      message: error.message,
+      code: error.code,
+      details: error.details
+    });
+    throw error;
+  }
 }
 
 // Get a single product request by ID
 export async function getProductRequestById(id) {
-  const { data, error } = await supabase
-    .from('product_requests')
-    .select('*, request_responses(*)')
-    .eq('id', id)
-    .single();
+  console.log(`DB-UTILS: Attempting to fetch product request with id: ${id}`);
   
-  if (error) throw error;
-  return data;
+  try {
+    const { data, error } = await supabase
+      .from('product_requests')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (error) {
+      console.error('DB-UTILS: Error fetching product request by id:', error);
+      throw error;
+    }
+    
+    console.log('DB-UTILS: Successfully fetched product request:', data);
+    return data;
+  } catch (error) {
+    console.error('DB-UTILS: Error in getProductRequestById function:', {
+      message: error.message,
+      code: error.code,
+      details: error.details
+    });
+    throw error;
+  }
 }
 
 /**

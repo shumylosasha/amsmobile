@@ -5,6 +5,10 @@ CREATE TABLE product_requests (
   quantity INTEGER NOT NULL,
   urgency TEXT NOT NULL,
   description TEXT,
+  preferred_brand TEXT,
+  expected_delivery DATE,
+  method TEXT, -- To track if requested via text, photo, or voice
+  image_url TEXT, -- To store the URL of attached images
   timestamp TIMESTAMPTZ DEFAULT NOW(),
   status TEXT DEFAULT 'pending',
   user_id UUID,
@@ -127,5 +131,19 @@ CREATE POLICY "Anyone can see feedback"
 
 CREATE POLICY "Anyone can insert feedback"
   ON feedback
+  FOR INSERT
+  WITH CHECK (true);
+
+-- Update policies to allow unauthenticated product requests (similar to feedback)
+DROP POLICY IF EXISTS "Users can see their own requests" ON product_requests;
+DROP POLICY IF EXISTS "Users can insert their own requests" ON product_requests;
+
+CREATE POLICY "Anyone can see product requests"
+  ON product_requests
+  FOR SELECT
+  USING (true);
+
+CREATE POLICY "Anyone can insert product requests"
+  ON product_requests
   FOR INSERT
   WITH CHECK (true); 
